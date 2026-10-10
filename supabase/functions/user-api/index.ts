@@ -14,7 +14,7 @@ function json(req: Request, body: unknown, status = 200) {
 }
 Deno.serve(async req => {
   if (req.method === "OPTIONS") return json(req,{});
-  if (req.method !== "GET") return json(req,{error:"Method not allowed; financial mutations are not enabled."},405);
+  if (!["GET","POST"].includes(req.method)) return json(req,{error:"Method not allowed; financial mutations are not enabled."},405);
   const origin=req.headers.get("origin")??"";
   if (origin && !origins.has(origin)) return json(req,{error:"Origin not allowed"},403);
   const header=req.headers.get("authorization")??"";
@@ -25,6 +25,16 @@ Deno.serve(async req => {
   if(["admin","manager","system"].includes(user.app_metadata?.role)) return json(req,{error:"Use the Admin API for privileged accounts"},403);
   const route=new URL(req.url).pathname.split("/").filter(Boolean).slice(-1)[0]??"me";
   try {
+    if (req.method === "POST" && route === "support") {
+      const payload = await req.json().catch(() => null);
+      const subject = typeof payload?.subject === "string" ? payload.subject.trim().slice(0,200) : "Customer support";
+      const body = typeof payload?.body === "string" ? payload.body.trim() : "";
+      if (!body || body.length > 10000) return json(req,{error:"Message must contain between 1 and 10000 characters"},400);
+      const { data, error } = await db.from("support_messages").insert({user_id:user.id,sender_id:user.id,sender_role:"user",subject,body}).select("id,subject,body,sender_role,created_at").single();
+      if (error) throw error;
+      return json(req,{data},201);
+    }
+    if (req.method === "POST") return json(req,{error:"This action is not enabled"},405);
     if(route==="me"||route==="profile"){
       const {data,error}=await db.from("profiles").select("id,user_code,full_name,phone,kyc_status,account_status,created_at,updated_at").eq("id",user.id).maybeSingle();
       if(error) throw error; return json(req,{data});
