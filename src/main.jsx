@@ -31,6 +31,9 @@ function App() {
   const [session, setSession] = useState(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [authMode, setAuthMode] = useState("login");
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState({ profile:null, wallet:null, plans:[], investments:[], ledger:[], deposits:[], withdrawals:[], bankAccounts:[], notifications:[], documents:[], messages:[], complaints:[], loading:false });
@@ -93,13 +96,28 @@ function App() {
   const isManager = roleIsManager(session?.user);
   const displayName = data.profile?.full_name || session?.user?.user_metadata?.full_name || session?.user?.email?.split("@")[0] || "Investor";
 
-  async function signIn() {
+  async function submitAuth() {
     if (!supabase) { setNotice("The Supabase publishable key is not configured in this deployment."); return; }
     if (!email.trim()) { setNotice("Enter your email address first."); return; }
     setBusy(true);
-    const {error} = await supabase.auth.signInWithOtp({email:email.trim(),options:{emailRedirectTo:window.location.origin}});
+    let error = null;
+    if (authMode === "signup") {
+      if (!fullName.trim()) { setBusy(false); setNotice("Enter your full name."); return; }
+      if (password.length < 8) { setBusy(false); setNotice("Use a password with at least 8 characters."); return; }
+      const result = await supabase.auth.signUp({email:email.trim(),password,options:{data:{full_name:fullName.trim()},emailRedirectTo:window.location.origin}});
+      error = result.error;
+      if (!error) setNotice("Account registration submitted. Check your email to verify your address before signing in.");
+    } else if (authMode === "reset") {
+      const result = await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});
+      error = result.error;
+      if (!error) setNotice("Password reset instructions have been sent if the email is registered.");
+    } else {
+      const result = await supabase.auth.signInWithPassword({email:email.trim(),password});
+      error = result.error;
+      if (!error) { setSession(result.data.session); setAuthOpen(false); setPassword(""); setNotice("Signed in successfully."); }
+    }
     setBusy(false);
-    setNotice(error ? error.message : "Sign-in link requested. Check your email to continue.");
+    if (error) setNotice(error.message);
   }
   async function signOut() { if (supabase) await supabase.auth.signOut(); setSession(null); setSection("Overview"); setNotice("You are signed out."); }
   function go(name) { setSection(name); setMobileNav(false); setNotice(""); }
@@ -161,7 +179,7 @@ function App() {
         <footer className="footer"><span>© {new Date().getFullYear()} Invest Broker</span><span><ShieldCheck size={13}/> Private customer workspace</span><span>Financial actions require secure backend verification</span></footer>
       </div>
     </main>
-    {authOpen&&<div className="modal-backdrop" onClick={()=>setAuthOpen(false)}><div className="auth-modal" onClick={e=>e.stopPropagation()}><button className="modal-close icon-button" onClick={()=>setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>Sign in securely</h2><p>We’ll send a one-time sign-in link to your email address.</p><label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"/><button className="primary-button full-button" onClick={signIn} disabled={busy}>{busy?"Requesting link…":"Send sign-in link"} <ChevronRight size={16}/></button><div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
+    {authOpen&&<div className="modal-backdrop" onClick={()=>setAuthOpen(false)}><div className="auth-modal" onClick={e=>e.stopPropagation()}><button className="modal-close icon-button" onClick={()=>setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>{authMode==="signup"?"Create your account":authMode==="reset"?"Reset password":"Welcome back"}</h2><p>{authMode==="signup"?"Register your personal customer account.":authMode==="reset"?"We’ll email you a secure password reset link.":"Sign in to access your private investment dashboard."}</p>{authMode==="signup"&&<><label htmlFor="fullName">Full name</label><input id="fullName" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your full name" autoComplete="name"/></>}<label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required/>{authMode!=="reset"&&<><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete={authMode==="signup"?"new-password":"current-password"} minLength={8} required/></>}{authMode==="login"&&<button className="auth-text-link" onClick={()=>setAuthMode("reset")}>Forgot password?</button>}<button className="primary-button full-button" onClick={submitAuth} disabled={busy}>{busy?"Please wait…":authMode==="signup"?"Create account":authMode==="reset"?"Send reset link":"Login"} <ChevronRight size={16}/></button><div className="auth-mode-switch">{authMode==="signup"?"Already registered?":"New to Invest Broker?"} <button onClick={()=>{setAuthMode(authMode==="signup"?"login":"signup");setNotice("");}}>{authMode==="signup"?"Login":"Create account"}</button>{authMode==="reset"&&<button onClick={()=>setAuthMode("login")}>Back to login</button>}</div><div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
   </div>;
 }
 
