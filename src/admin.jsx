@@ -6,6 +6,8 @@ import "./admin.css";
 const URL=import.meta.env.VITE_SUPABASE_URL||"https://rjgzvpkyccfpnpzlbcuc.supabase.co";
 const KEY=import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const db=KEY?createClient(URL,KEY):null;
+const adminApi=`${URL}/functions/v1/admin-api`;
+async function callAdminApi(session,route){const response=await fetch(`${adminApi}/${route}`,{headers:{Authorization:`Bearer ${session.access_token}`,apikey:KEY}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||"Admin API request failed");return payload.data;}
 const fmt=n=>new Intl.NumberFormat("en-NG",{style:"currency",currency:"NGN",maximumFractionDigits:2}).format(Number(n||0));
 const dt=v=>v?new Intl.DateTimeFormat("en-NG",{dateStyle:"medium"}).format(new Date(v)):"—";
 const nav=[["Dashboard",LayoutDashboard],["Users",Users],["Investments",BriefcaseBusiness],["Investment Plans",ChartNoAxesCombined],["Profit Management",Banknote],["Deposits",ArrowDownLeft],["Withdrawals",ArrowUpRight],["Treasury",Landmark],["Compliance",ShieldAlert],["AI Assistant",BrainCircuit],["Reports",FileBarChart2],["Audit Logs",FileClock],["Settings",Settings]];
