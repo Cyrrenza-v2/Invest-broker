@@ -9,7 +9,7 @@ const origins = new Set(["https://invest-broker.vercel.app","http://localhost:51
 function json(req: Request, body: unknown, status = 200) {
   const origin = req.headers.get("origin") ?? "";
   const headers = new Headers({"content-type":"application/json","cache-control":"no-store","vary":"Origin"});
-  if (origins.has(origin)) { headers.set("access-control-allow-origin",origin); headers.set("access-control-allow-headers","authorization, apikey, content-type, x-client-info"); headers.set("access-control-allow-methods","GET, OPTIONS"); }
+  if (origins.has(origin)) { headers.set("access-control-allow-origin",origin); headers.set("access-control-allow-headers","authorization, apikey, content-type, x-client-info"); headers.set("access-control-allow-methods","GET, POST, OPTIONS"); }
   return new Response(JSON.stringify(body),{status,headers});
 }
 Deno.serve(async req => {
