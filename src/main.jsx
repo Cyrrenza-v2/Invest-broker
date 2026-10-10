@@ -59,30 +59,20 @@ function App() {
     if (!supabase || !session?.user?.id) return;
     if (quiet) setRefreshing(true);
     else setData(previous => ({...previous, loading:true}));
-    const userId = session.user.id;
-    const [profile,wallet,plans,investments,ledger,deposits,withdrawals,bankAccounts,notifications,documents,messages,complaints] = await Promise.all([
-      supabase.from("profiles").select("*").eq("id",userId).maybeSingle(),
-      supabase.from("wallets").select("*").eq("user_id",userId).maybeSingle(),
-      supabase.from("investment_plans").select("*").eq("is_active",true).order("duration_days"),
-      supabase.from("investments").select("*,investment_plans(name,duration_days,return_rate,return_method)").order("created_at",{ascending:false}).limit(100),
-      supabase.from("ledger_entries").select("*").order("created_at",{ascending:false}).limit(200),
-      supabase.from("deposits").select("*").order("created_at",{ascending:false}).limit(100),
-      supabase.from("withdrawals").select("*").order("created_at",{ascending:false}).limit(100),
-      supabase.from("user_bank_accounts").select("*").order("created_at",{ascending:false}),
-      supabase.from("user_notifications").select("*").order("created_at",{ascending:false}).limit(100),
-      supabase.from("user_documents").select("*").order("created_at",{ascending:false}),
-      supabase.from("support_messages").select("*").order("created_at",{ascending:false}).limit(100),
-      supabase.from("user_complaints").select("*").order("created_at",{ascending:false}).limit(100)
-    ]);
-    const errors = [profile,wallet,plans,investments,ledger,deposits,withdrawals,bankAccounts,notifications,documents,messages,complaints].filter(x=>x.error);
-    setData({
-      profile:profile.data, wallet:wallet.data, plans:plans.data||[], investments:investments.data||[],
-      ledger:ledger.data||[], deposits:deposits.data||[], withdrawals:withdrawals.data||[],
-      bankAccounts:bankAccounts.data||[], notifications:notifications.data||[], documents:documents.data||[],
-      messages:messages.data||[], complaints:complaints.data||[], loading:false
-    });
-    setRefreshing(false);
-    if (errors.length) setNotice("Some sections could not load. The page only shows records permitted by your account's database policies.");
+    try {
+      const [profile,wallet,plans,investments,ledger,deposits,withdrawals,messages] = await Promise.all([
+        callUserApi(session,"me"), callUserApi(session,"wallet"), callUserApi(session,"investment-plans"),
+        callUserApi(session,"investments"), callUserApi(session,"transactions"), callUserApi(session,"deposits"),
+        callUserApi(session,"withdrawals"), callUserApi(session,"support")
+      ]);
+      setData({profile:profile||null,wallet:wallet||null,plans:plans||[],investments:investments||[],ledger:ledger||[],
+        deposits:deposits||[],withdrawals:withdrawals||[],bankAccounts:[],notifications:[],documents:[],
+        messages:messages||[],complaints:[],loading:false});
+      setNotice("");
+    } catch (error) {
+      setData(previous=>({...previous,loading:false}));
+      setNotice(error.message || "Account data could not be loaded from the secure User API.");
+    } finally { setRefreshing(false); }
   };
 
   useEffect(() => { if (session?.user?.id) loadData(); else setData({profile:null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false}); }, [session?.user?.id]);
