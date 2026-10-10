@@ -9,6 +9,7 @@ import {
   RefreshCw, AlertCircle
 } from "lucide-react";
 import "./style.css";
+import { getUserPath, resolveUserRoute } from "./routing.js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://rjgzvpkyccfpnpzlbcuc.supabase.co";
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -31,7 +32,7 @@ const navItems = [
 ];
 
 function App() {
-  const [section, setSection] = useState("Overview");
+  const [section, setSection] = useState(() => resolveUserRoute(window.location.pathname).section);
   const [mobileNav, setMobileNav] = useState(false);
   const [showBalance, setShowBalance] = useState(true);
   const [notice, setNotice] = useState("");
@@ -47,6 +48,22 @@ function App() {
   const [complaint, setComplaint] = useState({category:"other",subject:"",description:""});
   const [messageBody, setMessageBody] = useState("");
   const [showComplaintForm, setShowComplaintForm] = useState(false);
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const route = resolveUserRoute(window.location.pathname);
+      setSection(route.section);
+      if (route.authMode) {
+        setAuthMode(route.authMode);
+        setAuthOpen(true);
+      } else {
+        setAuthOpen(false);
+      }
+    };
+    syncRoute();
+    window.addEventListener("popstate", syncRoute);
+    return () => window.removeEventListener("popstate", syncRoute);
+  }, []);
 
   useEffect(() => {
     if (!supabase) return;
@@ -116,8 +133,8 @@ function App() {
     setBusy(false);
     if (error) setNotice(error.message);
   }
-  async function signOut() { if (supabase) await supabase.auth.signOut(); setSession(null); setSection("Overview"); setNotice("You are signed out."); }
-  function go(name) { setSection(name); setMobileNav(false); setNotice(""); }
+  async function signOut() { if (supabase) await supabase.auth.signOut(); const path = getUserPath("Overview"); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSession(null); setSection("Overview"); setNotice("You are signed out."); }
+  function go(name) { const path = getUserPath(name); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSection(name); setMobileNav(false); setAuthOpen(false); setNotice(""); }
   function disabledAction(action) { setNotice(action + " is not enabled yet. It will remain disabled until the secure server-side workflow and authorized payment provider are verified."); }
   async function sendComplaint(e) {
     e.preventDefault();
