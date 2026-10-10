@@ -17,7 +17,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { storageKey: "invest-broker-user-auth-v1", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
 const money = (n, currency = "NGN") => new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(n || 0));
 const date = value => value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value)) : "Not set";
-const roleIsManager = user => user?.app_metadata?.role === "admin";
+const roleIsAdmin = user => user?.app_metadata?.role === "admin";
 const userApi = `${supabaseUrl}/functions/v1/user-api`;
 async function callUserApi(session, route, options = {}) {
   const response = await fetch(`${userApi}/${route}`, { ...options, headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabaseKey, "Content-Type": "application/json" } });
@@ -89,6 +89,7 @@ function App() {
         setNotice("");
         return;
       }
+      setRegistrationPending(false);
       const [wallet,plans,investments,ledger,deposits,withdrawals,messages] = await Promise.all([
         callUserApi(session,"wallet"), callUserApi(session,"investment-plans"),
         callUserApi(session,"investments"), callUserApi(session,"transactions"), callUserApi(session,"deposits"),
@@ -120,7 +121,7 @@ function App() {
   const activeInvestments = data.investments.filter(item=>item.status==="active");
   const nextMaturity = activeInvestments.map(item=>item.maturity_at).filter(Boolean).sort()[0];
   const unreadCount = data.notifications.filter(item=>!item.read_at).length;
-  const isManager = roleIsManager(session?.user);
+  const isAdmin = roleIsAdmin(session?.user);
   const displayName = data.profile?.full_name || session?.user?.user_metadata?.full_name || session?.user?.email?.split("@")[0] || "Investor";
 
   async function submitAuth() {
@@ -214,7 +215,7 @@ function App() {
         <p>{checking ? "We're securely checking the status of your registration." : rejected ? "The administrator did not approve this application. Contact the platform administrator if you believe this is a mistake." : approvalStatus === "restricted" ? "Your account has been restricted by the platform. Contact the sole administrator for assistance." : approvalStatus === "error" ? "The account status service could not be reached. Your account remains locked until verification succeeds." : "Your registration profile and wallet are created automatically. The sole administrator must approve the account before any customer dashboard data or account actions become available."}</p>
         {data.profile?.user_code && <p><b>Account reference:</b> {data.profile.user_code}</p>}
         {notice && <div className="toast" role="status">{notice}</div>}
-        <button className="primary-button" style={{marginTop:16}} onClick={async()=>{if(registrationPending||approvalStatus==="pending"||approvalStatus==="rejected"||approvalStatus==="restricted"||approvalStatus==="error"){if(session&&supabase)await supabase.auth.signOut();setSession(null);setApprovalStatus("signed_out");setRegistrationPending(false);setAuthMode("login");setAuthOpen(true);}else await loadData(true);}}>
+        <button className="primary-button" style={{marginTop:16}} onClick={async()=>{if(session&&(approvalStatus==="checking"||approvalStatus==="approved")){await loadData(true);}else{if(session&&supabase)await supabase.auth.signOut();setSession(null);setApprovalStatus("signed_out");setRegistrationPending(false);setAuthMode("login");setAuthOpen(true);}}}>
           {checking ? "Check status again" : "Continue to sign in"} <ChevronRight size={16}/>
         </button>
       </section>
@@ -238,7 +239,7 @@ function App() {
         <div className="welcome-row"><div><div className="eyebrow"><span className="status-dot"/> INVEST BROKER <span className="tag">{session?"CUSTOMER PORTAL":"PREVIEW"}</span></div><h1>{section==="Overview"?"Welcome back, "+displayName:section}</h1><p>{section==="Overview"?"Your investments, wallet and account activity in one place.":sectionDescription(section)}</p></div><div className="header-actions"><button className="subtle-button" onClick={()=>loadData(true)} disabled={!session||refreshing}><RefreshCw size={15} className={refreshing?"spin":""}/> Refresh</button>{!session&&<button className="primary-button" onClick={()=>setAuthOpen(true)}>Sign in securely <ChevronRight size={16}/></button>}</div></div>
         {!session&&<div className="notice-banner"><div className="notice-icon"><LockKeyhole size={18}/></div><div><b>Sign in to view your account</b><p>This preview does not contain sample money or fabricated investment records. Sign in with the email associated with your account to load your own permitted records.</p></div><span className="notice-state">PRIVATE</span></div>}
         {notice&&<div className="toast" role="status"><span>{notice}</span><button onClick={()=>setNotice("")} aria-label="Dismiss notice"><X size={16}/></button></div>}
-        {isManager&&<div className="notice-banner"><div className="notice-icon"><ShieldCheck size={18}/></div><div><b>Manager account detected</b><p>This interface is the customer portal. Use the separately authorized admin interface for management actions.</p></div><span className="notice-state">USER SIDE</span></div>}
+        {isAdmin&&<div className="notice-banner"><div className="notice-icon"><ShieldCheck size={18}/></div><div><b>Administrator account detected</b><p>This interface is the customer portal. Use the separately authorized admin interface for management actions.</p></div><span className="notice-state">USER SIDE</span></div>}
         {section==="Overview"&&<Overview data={data} availableBalance={availableBalance} invested={invested} profitCredited={profitCredited} activeInvestments={activeInvestments} nextMaturity={nextMaturity} showBalance={showBalance} setShowBalance={setShowBalance} go={go} disabledAction={disabledAction} />}
         {section==="My investments"&&<Investments data={data} go={go} />}
         {section==="My wallet"&&<WalletPage data={data} availableBalance={availableBalance} invested={invested} profitCredited={profitCredited} showBalance={showBalance} setShowBalance={setShowBalance} disabledAction={disabledAction} />}
