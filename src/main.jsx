@@ -16,6 +16,13 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 const money = (n, currency = "NGN") => new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(n || 0));
 const date = value => value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value)) : "Not set";
 const roleIsManager = user => ["admin", "manager"].includes(user?.app_metadata?.role);
+const userApi = `${supabaseUrl}/functions/v1/user-api`;
+async function callUserApi(session, route, options = {}) {
+  const response = await fetch(`${userApi}/${route}`, { ...options, headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabaseKey, "Content-Type": "application/json" } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "User API request failed");
+  return payload.data;
+}
 const navItems = [
   ["Overview", LayoutDashboard], ["My investments", BriefcaseBusiness], ["My wallet", Wallet],
   ["Profit", TrendingUp], ["Withdrawals", ArrowUpRight], ["Deposits", ArrowDownLeft],
