@@ -1,0 +1,20 @@
+{
+  "id": "/admin-app",
+  "name": "Invest Broker — Admin",
+  "short_name": "IB Admin",
+  "description": "Restricted Invest Broker primary administrator console.",
+  "start_url": "/admin/dashboard?source=pwa-admin",
+  "scope": "/admin/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#111a2b",
+  "background_color": "#111a2b",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
