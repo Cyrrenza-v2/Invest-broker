@@ -61,7 +61,7 @@ Deno.serve(async req=>{
  try{
   if(route==="dashboard"){
    const results=await Promise.all([
-    db.from("profiles").select("id",{count:"exact",head:true}),
+    db.from("profiles").select("id",{count:"exact",head:true}).neq("id",control.primary_admin_user_id),
     db.from("investments").select("id",{count:"exact",head:true}).in("status",["active","matured"]),
     db.from("deposits").select("id",{count:"exact",head:true}).in("status",["pending","processing"]),
     db.from("withdrawals").select("id",{count:"exact",head:true}).in("status",["pending","under_review"]),
