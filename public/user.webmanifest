@@ -1,0 +1,20 @@
+{
+  "id": "/user-app",
+  "name": "Invest Broker — User",
+  "short_name": "Invest Broker",
+  "description": "Your private Invest Broker customer dashboard.",
+  "start_url": "/dashboard?source=pwa-user",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0b1220",
+  "background_color": "#0b1220",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
