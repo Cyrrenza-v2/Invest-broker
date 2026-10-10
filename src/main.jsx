@@ -16,7 +16,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { storageKey: "invest-broker-user-auth-v1", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
 const money = (n, currency = "NGN") => new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(n || 0));
 const date = value => value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value)) : "Not set";
-const roleIsManager = user => ["admin", "manager"].includes(user?.app_metadata?.role);
+const roleIsManager = user => user?.app_metadata?.role === "admin";
 const userApi = `${supabaseUrl}/functions/v1/user-api`;
 async function callUserApi(session, route, options = {}) {
   const response = await fetch(`${userApi}/${route}`, { ...options, headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabaseKey, "Content-Type": "application/json" } });
@@ -37,6 +37,7 @@ function App() {
   const [showBalance, setShowBalance] = useState(true);
   const [notice, setNotice] = useState("");
   const [session, setSession] = useState(null);
+  const [approvalStatus, setApprovalStatus] = useState("signed_out");
   const [authOpen, setAuthOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -67,8 +68,8 @@ function App() {
 
   useEffect(() => {
     if (!supabase) return;
-    supabase.auth.getSession().then(({data}) => setSession(data.session));
-    const {data: listener} = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    supabase.auth.getSession().then(({data}) => { setSession(data.session); setApprovalStatus(data.session ? "checking" : "signed_out"); });
+    const {data: listener} = supabase.auth.onAuthStateChange((_event, next) => { setSession(next); setApprovalStatus(next ? "checking" : "signed_out"); });
     return () => listener.subscription.unsubscribe();
   }, []);
 
@@ -77,8 +78,17 @@ function App() {
     if (quiet) setRefreshing(true);
     else setData(previous => ({...previous, loading:true}));
     try {
-      const [profile,wallet,plans,investments,ledger,deposits,withdrawals,messages] = await Promise.all([
-        callUserApi(session,"me"), callUserApi(session,"wallet"), callUserApi(session,"investment-plans"),
+      const profile = await callUserApi(session, "me");
+      setData(previous => ({...previous, profile:profile||null, loading:false}));
+      const approval = profile?.approval_status || "pending";
+      setApprovalStatus(approval);
+      if (approval !== "approved") {
+        setData({profile:profile||null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false});
+        setNotice("");
+        return;
+      }
+      const [wallet,plans,investments,ledger,deposits,withdrawals,messages] = await Promise.all([
+        callUserApi(session,"wallet"), callUserApi(session,"investment-plans"),
         callUserApi(session,"investments"), callUserApi(session,"transactions"), callUserApi(session,"deposits"),
         callUserApi(session,"withdrawals"), callUserApi(session,"support")
       ]);
@@ -87,12 +97,13 @@ function App() {
         messages:messages||[],complaints:[],loading:false});
       setNotice("");
     } catch (error) {
+      setApprovalStatus("error");
       setData(previous=>({...previous,loading:false}));
       setNotice(error.message || "Account data could not be loaded from the secure User API.");
     } finally { setRefreshing(false); }
   };
 
-  useEffect(() => { if (session?.user?.id) loadData(); else setData({profile:null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false}); }, [session?.user?.id]);
+  useEffect(() => { if (session?.user?.id) { setApprovalStatus("checking"); loadData(); } else { setApprovalStatus("signed_out"); setData({profile:null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false}); } }, [session?.user?.id]);
 
   const postedLedger = data.ledger.filter(entry => entry.status === "posted");
   const availableBalance = postedLedger.reduce((sum, entry) => {
@@ -120,7 +131,21 @@ function App() {
       if (password.length < 8) { setBusy(false); setNotice("Use a password with at least 8 characters."); return; }
       const result = await supabase.auth.signUp({email:email.trim(),password,options:{data:{full_name:fullName.trim()},emailRedirectTo:window.location.origin}});
       error = result.error;
-      if (!error) setNotice("Account registration submitted. Check your email to verify your address before signing in.");
+      if (!error) {
+        setFullName("");
+        setPassword("");
+        if (result.data.session) {
+          setSession(result.data.session);
+          setApprovalStatus("checking");
+          setAuthOpen(false);
+          const path = getUserPath("Overview");
+          if (window.location.pathname !== path) window.history.pushState({}, "", path);
+          setSection("Overview");
+          setNotice("Your account has been created and submitted for administrator approval.");
+        } else {
+          setNotice("Registration received. Your account must complete the configured sign-up verification and then be approved by the administrator before dashboard access is enabled.");
+        }
+      }
     } else if (authMode === "reset") {
       const result = await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});
       error = result.error;
@@ -128,12 +153,32 @@ function App() {
     } else {
       const result = await supabase.auth.signInWithPassword({email:email.trim(),password});
       error = result.error;
-      if (!error) { setSession(result.data.session); setAuthOpen(false); setPassword(""); setNotice("Signed in successfully."); }
+      if (!error) {
+        const profile = await callUserApi(result.data.session, "me");
+        if (profile?.approval_status !== "approved") {
+          await supabase.auth.signOut();
+          setSession(null);
+          setApprovalStatus(profile?.approval_status || "pending");
+          setPassword("");
+          setNotice(profile?.approval_status === "rejected"
+            ? "This account application was rejected. Contact the platform administrator."
+            : "Your account is awaiting administrator approval. You can sign in after it is approved.");
+        } else {
+          setSession(result.data.session);
+          setApprovalStatus("approved");
+          setAuthOpen(false);
+          setPassword("");
+          setNotice("Signed in successfully. Welcome to your dashboard.");
+          const path = getUserPath("Overview");
+          if (window.location.pathname !== path) window.history.pushState({}, "", path);
+          setSection("Overview");
+        }
+      }
     }
     setBusy(false);
     if (error) setNotice(error.message);
   }
-  async function signOut() { if (supabase) await supabase.auth.signOut(); const path = getUserPath("Overview"); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSession(null); setSection("Overview"); setNotice("You are signed out."); }
+  async function signOut() { if (supabase) await supabase.auth.signOut(); const path = getUserPath("Overview"); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSession(null); setApprovalStatus("signed_out"); setSection("Overview"); setNotice("You are signed out."); }
   function go(name) { const path = getUserPath(name); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSection(name); setMobileNav(false); setAuthOpen(false); setNotice(""); }
   function disabledAction(action) { setNotice(action + " is not enabled yet. It will remain disabled until the secure server-side workflow and authorized payment provider are verified."); }
   async function sendComplaint(e) {
@@ -154,6 +199,24 @@ function App() {
   }
   async function markNotificationRead() {
     disabledAction("Notification updates");
+  }
+
+  if (session && approvalStatus !== "approved") {
+    const rejected = approvalStatus === "rejected" || data.profile?.approval_status === "rejected";
+    const checking = approvalStatus === "checking" || !approvalStatus;
+    return <div className="app-shell user-portal" style={{minHeight:"100vh",display:"grid",placeItems:"center",padding:24}}>
+      <section className="panel user-panel" style={{width:"min(560px,100%)",padding:32}}>
+        <div className="brand-mark" style={{marginBottom:20}}><ShieldCheck size={24}/></div>
+        <div className="eyebrow">INVEST BROKER · ACCOUNT ACCESS</div>
+        <h1 style={{marginTop:12}}>{checking ? "Checking account status…" : rejected ? "Account approval declined" : approvalStatus === "error" ? "We couldn't verify your account" : "Your account is awaiting approval"}</h1>
+        <p>{checking ? "We're securely checking the status of your registration." : rejected ? "The administrator did not approve this application. Contact the platform administrator if you believe this is a mistake." : approvalStatus === "error" ? "The account status service could not be reached. Your account remains locked until verification succeeds." : "Your registration has been saved. The sole administrator must approve your account before you can access the user dashboard or account data."}</p>
+        {data.profile?.user_code && <p><b>Account reference:</b> {data.profile.user_code}</p>}
+        {notice && <div className="toast" role="status">{notice}</div>}
+        <button className="primary-button" style={{marginTop:16}} onClick={async()=>{if(approvalStatus==="pending"||approvalStatus==="rejected"||approvalStatus==="error"){await signOut();setAuthMode("login");setAuthOpen(true);}else await loadData(true);}}>
+          {checking ? "Check status again" : "Return to sign in"} <ChevronRight size={16}/>
+        </button>
+      </section>
+    </div>;
   }
 
   return <div className="app-shell user-portal">
