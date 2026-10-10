@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import "./style.css";
 import { getUserPath, resolveUserRoute } from "./routing.js";
+import { approvalAccessMessage, isApprovedAccount } from "./approval.js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://rjgzvpkyccfpnpzlbcuc.supabase.co";
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -80,9 +81,9 @@ function App() {
     try {
       const profile = await callUserApi(session, "me");
       setData(previous => ({...previous, profile:profile||null, loading:false}));
-      const approval = profile?.approval_status || "pending";
+      const approval = approvalAccessMessage(profile);
       setApprovalStatus(approval);
-      if (approval !== "approved") {
+      if (!isApprovedAccount(profile)) {
         setData({profile:profile||null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false});
         setNotice("");
         return;
@@ -155,14 +156,17 @@ function App() {
       error = result.error;
       if (!error) {
         const profile = await callUserApi(result.data.session, "me");
-        if (profile?.approval_status !== "approved") {
+        if (!isApprovedAccount(profile)) {
           await supabase.auth.signOut();
           setSession(null);
-          setApprovalStatus(profile?.approval_status || "pending");
+          const status=approvalAccessMessage(profile);
+          setApprovalStatus(status);
           setPassword("");
-          setNotice(profile?.approval_status === "rejected"
+          setNotice(status === "rejected"
             ? "This account application was rejected. Contact the platform administrator."
-            : "Your account is awaiting administrator approval. You can sign in after it is approved.");
+            : status === "restricted"
+              ? "This account is restricted. Contact the platform administrator."
+              : "Your account is awaiting administrator approval. You can sign in after it is approved.");
         } else {
           setSession(result.data.session);
           setApprovalStatus("approved");
@@ -208,8 +212,8 @@ function App() {
       <section className="panel user-panel" style={{width:"min(560px,100%)",padding:32}}>
         <div className="brand-mark" style={{marginBottom:20}}><ShieldCheck size={24}/></div>
         <div className="eyebrow">INVEST BROKER · ACCOUNT ACCESS</div>
-        <h1 style={{marginTop:12}}>{checking ? "Checking account status…" : rejected ? "Account approval declined" : approvalStatus === "error" ? "We couldn't verify your account" : "Your account is awaiting approval"}</h1>
-        <p>{checking ? "We're securely checking the status of your registration." : rejected ? "The administrator did not approve this application. Contact the platform administrator if you believe this is a mistake." : approvalStatus === "error" ? "The account status service could not be reached. Your account remains locked until verification succeeds." : "Your registration has been saved. The sole administrator must approve your account before you can access the user dashboard or account data."}</p>
+        <h1 style={{marginTop:12}}>{checking ? "Checking account status…" : rejected ? "Account approval declined" : approvalStatus === "restricted" ? "Account access is restricted" : approvalStatus === "error" ? "We couldn't verify your account" : "Your account is awaiting approval"}</h1>
+        <p>{checking ? "We're securely checking the status of your registration." : rejected ? "The administrator did not approve this application. Contact the platform administrator if you believe this is a mistake." : approvalStatus === "restricted" ? "Your account has been restricted by the platform. Contact the sole administrator for assistance." : approvalStatus === "error" ? "The account status service could not be reached. Your account remains locked until verification succeeds." : "Your registration has been saved. The sole administrator must approve your account before you can access the user dashboard or account data."}</p>
         {data.profile?.user_code && <p><b>Account reference:</b> {data.profile.user_code}</p>}
         {notice && <div className="toast" role="status">{notice}</div>}
         <button className="primary-button" style={{marginTop:16}} onClick={async()=>{if(approvalStatus==="pending"||approvalStatus==="rejected"||approvalStatus==="error"){await signOut();setAuthMode("login");setAuthOpen(true);}else await loadData(true);}}>
