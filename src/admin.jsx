@@ -82,7 +82,31 @@ function AdminApp(){
   }catch(error){setNotice(error?.message||"Secure login failed. Check your email, password, and email confirmation status.");}
   finally{setBusy(false);}
  };
- const startMfaEnrollment=async()=>{if(!db||!session||!manager)return;setBusy(true);setNotice("");const {data,error}=await db.auth.mfa.enroll({factorType:"totp",friendlyName:"Invest Broker Admin"});setBusy(false);if(error){setNotice("Could not start authenticator setup: "+error.message);return;}setEnrollment(data);setMfaEnrolled(false);setNotice("Scan the QR code with your authenticator app, then enter the six-digit code.");};
+ const startMfaEnrollment=async()=>{
+  if(!db||!session||!manager)return;
+  setBusy(true);setNotice("");
+  try{
+   const {data:listed,error:listError}=await db.auth.mfa.listFactors();
+   if(listError)throw listError;
+   const verified=listed?.totp?.find(f=>f.status==="verified");
+   if(verified){
+    setEnrollment(null);setMfaEnrolled(true);setMfaCode("");
+    setNotice("An authenticator is already verified for this account. Enter the current six-digit code from that authenticator to continue; no new QR code is needed.");
+    return;
+   }
+   const stale=(listed?.all||listed?.totp||[]).find(f=>f.factor_type==="totp"&&f.friendly_name==="Invest Broker Admin"&&f.status!=="verified");
+   if(stale){
+    const {error:removeError}=await db.auth.mfa.unenroll({factorId:stale.id});
+    if(removeError)throw new Error("Could not remove the unfinished authenticator setup: "+removeError.message);
+   }
+   const {data,error}=await db.auth.mfa.enroll({factorType:"totp",friendlyName:"Invest Broker Admin"});
+   if(error)throw error;
+   setEnrollment(data);setMfaEnrolled(false);
+   setNotice("Scan this new QR code with your authenticator app, then enter the current six-digit code. Ignore any older Invest Broker Admin entry in the app.");
+  }catch(error){
+   setNotice("Could not start authenticator setup: "+(error?.message||"Unknown error"));
+  }finally{setBusy(false);}
+ };
  const verifyEnrollment=async()=>{if(!db||!session||!enrollment?.id)return;setBusy(true);const {error}=await db.auth.mfa.challengeAndVerify({factorId:enrollment.id,code:mfaCode.trim()});setBusy(false);if(error){setNotice("Authenticator setup verification failed: "+error.message);return;}setMfaCode("");setEnrollment(null);setMfaEnrolled(true);setMfaVerified(true);setNotice("Authenticator enrolled and verified. Admin access is unlocked.");await loadData();};
  const verifyMfa=async()=>{if(!db||!session)return;setBusy(true);const {data:factors}=await db.auth.mfa.listFactors();const factor=factors?.totp?.find(f=>f.status==="verified");if(!factor){setBusy(false);setMfaEnrolled(false);setNotice("No verified authenticator is enrolled. Set one up to continue.");return;}const {error}=await db.auth.mfa.challengeAndVerify({factorId:factor.id,code:mfaCode.trim()});setBusy(false);if(error){setNotice("MFA verification failed: "+error.message);return;}setMfaCode("");setMfaVerified(true);setNotice("Multi-factor authentication verified.");await loadData();};
  const signOut=async()=>{if(db)await db.auth.signOut();setSession(null);setMfaVerified(false);setRows({});setNotice("Signed out.");};
