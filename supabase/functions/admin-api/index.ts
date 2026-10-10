@@ -9,12 +9,12 @@ const origins=new Set(["https://invest-broker.vercel.app","http://localhost:5173
 function json(req:Request,body:unknown,status=200){
  const origin=req.headers.get("origin")??"";
  const headers=new Headers({"content-type":"application/json","cache-control":"no-store","vary":"Origin"});
- if(origins.has(origin)){headers.set("access-control-allow-origin",origin);headers.set("access-control-allow-headers","authorization, apikey, content-type, x-client-info");headers.set("access-control-allow-methods","GET, OPTIONS");}
+ if(origins.has(origin)){headers.set("access-control-allow-origin",origin);headers.set("access-control-allow-headers","authorization, apikey, content-type, x-client-info");headers.set("access-control-allow-methods","GET, POST, OPTIONS");}
  return new Response(JSON.stringify(body),{status,headers});
 }
 Deno.serve(async req=>{
  if(req.method==="OPTIONS") return json(req,{});
- if(req.method!=="GET") return json(req,{error:"Admin write operations remain disabled until transactional approval workflows are implemented."},405);
+ if(!["GET","POST"].includes(req.method)) return json(req,{error:"Method not allowed"},405);
  const origin=req.headers.get("origin")??"";
  if(origin&&!origins.has(origin)) return json(req,{error:"Origin not allowed"},403);
  const header=req.headers.get("authorization")??"";
@@ -22,17 +22,48 @@ Deno.serve(async req=>{
  if(!token) return json(req,{error:"Authentication required"},401);
  const {data:{user},error:authError}=await authClient.auth.getUser(token);
  if(authError||!user) return json(req,{error:"Invalid or expired session"},401);
- if(!["admin","manager"].includes(user.app_metadata?.role)) return json(req,{error:"Manager permission required"},403);
+ if(user.app_metadata?.role!=="admin") return json(req,{error:"Sole administrator permission required"},403);
  const {data:claimsData,error:claimsError}=await authClient.auth.getClaims(token);
  if(claimsError||claimsData?.claims?.aal!=="aal2") return json(req,{error:"Verified MFA (AAL2) is required"},403);
- const urlObj=new URL(req.url); const route=urlObj.pathname.split("/").filter(Boolean).slice(-1)[0]??"dashboard";
-  const routeRoles:Record<string,string[]> = {
-   dashboard:["admin","manager"], users:["admin","manager"], investments:["admin","manager"],
-   "investment-plans":["admin","manager"], returns:["admin","manager"], deposits:["admin","manager"],
-   withdrawals:["admin","manager"], compliance:["admin","manager"], treasury:["admin"], "audit-logs":["admin"]
-  };
-  if(!routeRoles[route]) return json(req,{error:"Route not found"},404);
-  if(!routeRoles[route].includes(user.app_metadata?.role)) return json(req,{error:"Insufficient permission for this resource"},403);
+ const {data:control,error:controlError}=await db.from("platform_control").select("primary_admin_user_id").eq("singleton",true).maybeSingle();
+  if(controlError) return json(req,{error:"Unable to verify primary administrator configuration"},500);
+  if(!control?.primary_admin_user_id) return json(req,{error:"The platform owner must assign the single primary administrator before admin operations can be used."},503);
+  if(control.primary_admin_user_id!==user.id) return json(req,{error:"This account is not the assigned primary administrator."},403);
+  const urlObj=new URL(req.url); const route=urlObj.pathname.split("/").filter(Boolean).slice(-1)[0]??"dashboard";
+  const allowedRoutes=new Set(["dashboard","users","investments","investment-plans","returns","deposits","withdrawals","compliance","treasury","audit-logs"]);
+  if(!allowedRoutes.has(route)) return json(req,{error:"Route not found"},404);
+  if(req.method==="POST") {
+    if(route!=="users") return json(req,{error:"Only account approval actions are enabled in this endpoint"},405);
+    const payload=await req.json().catch(()=>null);
+    const action=payload?.action;
+    const userId=typeof payload?.user_id==="string"?payload.user_id:"";
+    if(!["approve","reject"].includes(action)||! /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
+      return json(req,{error:"Provide a valid user_id and approve/reject action"},400);
+    }
+    const reason=typeof payload?.reason==="string"?payload.reason.trim().slice(0,500):"";
+    const {data:target,error:targetError}=await db.from("profiles").select("id,approval_status,account_status,user_code").eq("id",userId).maybeSingle();
+    if(targetError) throw targetError;
+    if(!target) return json(req,{error:"Account application not found"},404);
+    if(target.approval_status!=="pending") return json(req,{error:"Only pending applications can be reviewed"},409);
+    const now=new Date().toISOString();
+    const nextStatus=action==="approve"?"approved":"rejected";
+    const nextAccountStatus=action==="approve"?"active":"restricted";
+    const {data:updated,error:updateError}=await db.from("profiles").update({
+      approval_status:nextStatus,account_status:nextAccountStatus,
+      approval_reviewed_by:user.id,approval_reviewed_at:now,approval_reason:reason||null,updated_at:now
+    }).eq("id",userId).eq("approval_status","pending")
+      .select("id,user_code,full_name,kyc_status,account_status,approval_status,approval_reviewed_at").maybeSingle();
+    if(updateError) throw updateError;
+    if(!updated) return json(req,{error:"This application was already reviewed. Refresh the queue."},409);
+    const {error:auditError}=await db.from("audit_logs").insert({
+      actor_id:user.id,actor_role:"admin",action:action==="approve"?"customer_account_approved":"customer_account_rejected",
+      entity_type:"customer_account",entity_id:userId,reason:reason||null,
+      before_state:{approval_status:"pending",account_status:target.account_status},
+      after_state:{approval_status:nextStatus,account_status:nextAccountStatus,reviewed_at:now}
+    });
+    if(auditError) throw auditError;
+    return json(req,{data:updated},200);
+  }
  const limit=Math.min(Math.max(Number(urlObj.searchParams.get("limit")??100),1),200);
  try{
   if(route==="dashboard"){
@@ -47,7 +78,7 @@ Deno.serve(async req=>{
    return json(req,{data:{users:results[0].count??0,activeOrMaturedInvestments:results[1].count??0,pendingDeposits:results[2].count??0,pendingWithdrawals:results[3].count??0,openComplianceCases:results[4].count??0}});
   }
   const specs:Record<string,{table:string;select:string}> = {
-   users:{table:"profiles",select:"id,user_code,full_name,phone,kyc_status,account_status,created_at,updated_at"},
+   users:{table:"profiles",select:"id,user_code,full_name,phone,kyc_status,account_status,approval_status,approval_reviewed_by,approval_reviewed_at,approval_reason,created_at,updated_at"},
    investments:{table:"investments",select:"id,investment_code,user_id,plan_id,principal,currency,status,started_at,maturity_at,created_at"},
    "investment-plans":{table:"investment_plans",select:"id,name,description,currency,minimum_amount,maximum_amount,duration_days,return_rate,return_method,withdrawal_window_days,is_active,terms_version,created_at,updated_at"},
    returns:{table:"ledger_entries",select:"id,user_id,wallet_id,entry_type,amount,currency,status,reference,related_entity_type,related_entity_id,description,created_at,posted_at"},
