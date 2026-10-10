@@ -39,6 +39,7 @@ function App() {
   const [notice, setNotice] = useState("");
   const [session, setSession] = useState(null);
   const [approvalStatus, setApprovalStatus] = useState("signed_out");
+  const [registrationPending, setRegistrationPending] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -135,17 +136,14 @@ function App() {
       if (!error) {
         setFullName("");
         setPassword("");
-        if (result.data.session) {
-          setSession(result.data.session);
-          setApprovalStatus("checking");
-          setAuthOpen(false);
-          const path = getUserPath("Overview");
-          if (window.location.pathname !== path) window.history.pushState({}, "", path);
-          setSection("Overview");
-          setNotice("Your account has been created and submitted for administrator approval.");
-        } else {
-          setNotice("Registration received. Your account must complete the configured sign-up verification and then be approved by the administrator before dashboard access is enabled.");
-        }
+        setRegistrationPending(true);
+        setApprovalStatus(result.data.session ? "checking" : "pending");
+        if (result.data.session) setSession(result.data.session);
+        setAuthOpen(false);
+        const path = getUserPath("Overview");
+        if (window.location.pathname !== path) window.history.pushState({}, "", path);
+        setSection("Overview");
+        setNotice("Registration received. Your account is waiting for administrator approval.");
       }
     } else if (authMode === "reset") {
       const result = await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});
@@ -182,7 +180,7 @@ function App() {
     setBusy(false);
     if (error) setNotice(error.message);
   }
-  async function signOut() { if (supabase) await supabase.auth.signOut(); const path = getUserPath("Overview"); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSession(null); setApprovalStatus("signed_out"); setSection("Overview"); setNotice("You are signed out."); }
+  async function signOut() { if (supabase) await supabase.auth.signOut(); const path = getUserPath("Overview"); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSession(null); setApprovalStatus("signed_out"); setRegistrationPending(false); setSection("Overview"); setNotice("You are signed out."); }
   function go(name) { const path = getUserPath(name); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSection(name); setMobileNav(false); setAuthOpen(false); setNotice(""); }
   function disabledAction(action) { setNotice(action + " is not enabled yet. It will remain disabled until the secure server-side workflow and authorized payment provider are verified."); }
   async function sendComplaint(e) {
@@ -205,7 +203,7 @@ function App() {
     disabledAction("Notification updates");
   }
 
-  if (session && approvalStatus !== "approved") {
+  if (registrationPending || (session && approvalStatus !== "approved")) {
     const rejected = approvalStatus === "rejected" || data.profile?.approval_status === "rejected";
     const checking = approvalStatus === "checking" || !approvalStatus;
     return <div className="app-shell user-portal" style={{minHeight:"100vh",display:"grid",placeItems:"center",padding:24}}>
@@ -213,11 +211,11 @@ function App() {
         <div className="brand-mark" style={{marginBottom:20}}><ShieldCheck size={24}/></div>
         <div className="eyebrow">INVEST BROKER · ACCOUNT ACCESS</div>
         <h1 style={{marginTop:12}}>{checking ? "Checking account status…" : rejected ? "Account approval declined" : approvalStatus === "restricted" ? "Account access is restricted" : approvalStatus === "error" ? "We couldn't verify your account" : "Your account is awaiting approval"}</h1>
-        <p>{checking ? "We're securely checking the status of your registration." : rejected ? "The administrator did not approve this application. Contact the platform administrator if you believe this is a mistake." : approvalStatus === "restricted" ? "Your account has been restricted by the platform. Contact the sole administrator for assistance." : approvalStatus === "error" ? "The account status service could not be reached. Your account remains locked until verification succeeds." : "Your registration has been saved. The sole administrator must approve your account before you can access the user dashboard or account data."}</p>
+        <p>{checking ? "We're securely checking the status of your registration." : rejected ? "The administrator did not approve this application. Contact the platform administrator if you believe this is a mistake." : approvalStatus === "restricted" ? "Your account has been restricted by the platform. Contact the sole administrator for assistance." : approvalStatus === "error" ? "The account status service could not be reached. Your account remains locked until verification succeeds." : "Your registration profile and wallet are created automatically. The sole administrator must approve the account before any customer dashboard data or account actions become available."}</p>
         {data.profile?.user_code && <p><b>Account reference:</b> {data.profile.user_code}</p>}
         {notice && <div className="toast" role="status">{notice}</div>}
-        <button className="primary-button" style={{marginTop:16}} onClick={async()=>{if(approvalStatus==="pending"||approvalStatus==="rejected"||approvalStatus==="error"){await signOut();setAuthMode("login");setAuthOpen(true);}else await loadData(true);}}>
-          {checking ? "Check status again" : "Return to sign in"} <ChevronRight size={16}/>
+        <button className="primary-button" style={{marginTop:16}} onClick={async()=>{if(registrationPending||approvalStatus==="pending"||approvalStatus==="rejected"||approvalStatus==="restricted"||approvalStatus==="error"){if(session&&supabase)await supabase.auth.signOut();setSession(null);setApprovalStatus("signed_out");setRegistrationPending(false);setAuthMode("login");setAuthOpen(true);}else await loadData(true);}}>
+          {checking ? "Check status again" : "Continue to sign in"} <ChevronRight size={16}/>
         </button>
       </section>
     </div>;
