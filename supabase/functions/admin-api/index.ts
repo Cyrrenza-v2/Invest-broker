@@ -5,7 +5,17 @@ const serviceKey=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const anonKey=Deno.env.get("SUPABASE_ANON_KEY")!;
 const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
 const authClient=createClient(url,anonKey,{auth:{persistSession:false,autoRefreshToken:false}});
-function isAllowedOrigin(origin: string) { try { const u = new URL(origin); if (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname) && u.port === "5173") return true; return u.protocol === "https:" && (u.hostname === "invest-broker.vercel.app" || (u.hostname.startsWith("invest-broker-") && u.hostname.endsWith(".vercel.app"))); } catch { return false; } }
+function isAllowedOrigin(origin: string) {
+ try {
+  const u = new URL(origin);
+  if (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname) && u.port === "5173") return true;
+  if (u.protocol !== "https:" || !u.hostname.endsWith(".vercel.app")) return false;
+  return u.hostname === "invest-broker.vercel.app"
+   || u.hostname === "admin-invest-broker.vercel.app"
+   || (u.hostname.startsWith("invest-broker-") && u.hostname.endsWith(".vercel.app"))
+   || (u.hostname.startsWith("admin-invest-broker-") && u.hostname.endsWith(".vercel.app"));
+ } catch { return false; }
+}
 function json(req:Request,body:unknown,status=200){
  const origin=req.headers.get("origin")??"";
  const headers=new Headers({"content-type":"application/json","cache-control":"no-store","vary":"Origin"});
@@ -26,31 +36,27 @@ Deno.serve(async req=>{
  const {data:claimsData,error:claimsError}=await authClient.auth.getClaims(token);
  if(claimsError||claimsData?.claims?.aal!=="aal2") return json(req,{error:"Verified MFA (AAL2) is required"},403);
  const {data:control,error:controlError}=await db.from("platform_control").select("primary_admin_user_id").eq("singleton",true).maybeSingle();
-  if(controlError) return json(req,{error:"Unable to verify primary administrator configuration"},500);
-  if(!control?.primary_admin_user_id) return json(req,{error:"The platform owner must assign the single primary administrator before admin operations can be used."},503);
-  if(control.primary_admin_user_id!==user.id) return json(req,{error:"This account is not the assigned primary administrator."},403);
-  const urlObj=new URL(req.url); const route=urlObj.pathname.split("/").filter(Boolean).slice(-1)[0]??"dashboard";
-  const allowedRoutes=new Set(["dashboard","users","investments","investment-plans","returns","deposits","withdrawals","compliance","treasury","audit-logs"]);
-  if(!allowedRoutes.has(route)) return json(req,{error:"Route not found"},404);
-  if(req.method==="POST") {
-    if(route!=="users") return json(req,{error:"Only account approval actions are enabled in this endpoint"},405);
-    const payload=await req.json().catch(()=>null);
-    const action=payload?.action;
-    const userId=typeof payload?.user_id==="string"?payload.user_id:"";
-    if(!["approve","reject"].includes(action)||! /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) {
-      return json(req,{error:"Provide a valid user_id and approve/reject action"},400);
-    }
-    const reason=typeof payload?.reason==="string"?payload.reason.trim().slice(0,500):"";
-    const {data:updated,error:reviewError}=await db.rpc("review_customer_account",{
-      p_user_id:userId,p_action:action,p_actor_id:user.id,p_reason:reason||null
-    });
-    if(reviewError) {
-      const message=reviewError.message||"Account review failed";
-      const status=message.includes("not found")?404:message.includes("Only pending")?409:400;
-      return json(req,{error:message},status);
-    }
-    return json(req,{data:updated},200);
+ if(controlError) return json(req,{error:"Unable to verify primary administrator configuration"},500);
+ if(!control?.primary_admin_user_id) return json(req,{error:"The platform owner must assign the single primary administrator before admin operations can be used."},503);
+ if(control.primary_admin_user_id!==user.id) return json(req,{error:"This account is not the assigned primary administrator."},403);
+ const urlObj=new URL(req.url); const route=urlObj.pathname.split("/").filter(Boolean).slice(-1)[0]??"dashboard";
+ const allowedRoutes=new Set(["dashboard","users","investments","investment-plans","returns","deposits","withdrawals","compliance","treasury","audit-logs"]);
+ if(!allowedRoutes.has(route)) return json(req,{error:"Route not found"},404);
+ if(req.method==="POST") {
+  if(route!=="users") return json(req,{error:"Only account approval actions are enabled in this endpoint"},405);
+  const payload=await req.json().catch(()=>null);
+  const action=payload?.action;
+  const userId=typeof payload?.user_id==="string"?payload.user_id:"";
+  if(!["approve","reject"].includes(action)||! /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId)) return json(req,{error:"Provide a valid user_id and approve/reject action"},400);
+  const reason=typeof payload?.reason==="string"?payload.reason.trim().slice(0,500):"";
+  const {data:updated,error:reviewError}=await db.rpc("review_customer_account",{p_user_id:userId,p_action:action,p_actor_id:user.id,p_reason:reason||null});
+  if(reviewError) {
+   const message=reviewError.message||"Account review failed";
+   const status=message.includes("not found")?404:message.includes("Only pending")?409:400;
+   return json(req,{error:message},status);
   }
+  return json(req,{data:updated},200);
+ }
  const limit=Math.min(Math.max(Number(urlObj.searchParams.get("limit")??100),1),200);
  try{
   if(route==="dashboard"){
