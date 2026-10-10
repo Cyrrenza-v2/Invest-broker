@@ -121,12 +121,7 @@ function App() {
   function disabledAction(action) { setNotice(action + " is not enabled yet. It will remain disabled until the secure server-side workflow and authorized payment provider are verified."); }
   async function sendComplaint(e) {
     e.preventDefault();
-    if (!session || !complaint.subject.trim() || complaint.description.trim().length < 10) return;
-    setBusy(true);
-    const {error} = await supabase.from("user_complaints").insert({...complaint,user_id:session.user.id});
-    setBusy(false);
-    if (error) setNotice("Complaint could not be submitted: " + error.message);
-    else { setComplaint({category:"other",subject:"",description:""}); setShowComplaintForm(false); setNotice("Your complaint was submitted."); await loadData(true); }
+    disabledAction("Complaint submission");
   }
   async function sendSupportMessage(e) {
     e.preventDefault();
@@ -140,10 +135,8 @@ function App() {
     } catch (error) { setNotice("Message could not be sent: " + error.message); }
     finally { setBusy(false); }
   }
-  async function markNotificationRead(item) {
-    const {error} = await supabase.from("user_notifications").update({read_at:new Date().toISOString()}).eq("id",item.id).eq("user_id",session.user.id);
-    if (error) setNotice("Notifications are currently read-only. " + error.message);
-    else await loadData(true);
+  async function markNotificationRead() {
+    disabledAction("Notification updates");
   }
 
   return <div className="app-shell user-portal">
