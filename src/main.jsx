@@ -70,7 +70,7 @@ function App() {
 
   useEffect(() => {
     if (!supabase) return;
-    supabase.auth.getSession().then(({data}) => { setSession(data.session); setApprovalStatus(data.session ? "checking" : "signed_out"); });
+    supabase.auth.getSession().then(({data}) => { setSession(data.session); setApprovalStatus(data.session ? "checking" : "signed_out"); if (!data.session && ["/","/dashboard","/login","/register"].includes(window.location.pathname)) { const route=resolveUserRoute(window.location.pathname); setAuthMode(route.authMode || "login"); setAuthOpen(true); } });
     const {data: listener} = supabase.auth.onAuthStateChange((_event, next) => { setSession(next); setApprovalStatus(next ? "checking" : "signed_out"); });
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -215,9 +215,7 @@ function App() {
         <p>{checking ? "We're securely checking the status of your registration." : rejected ? "The administrator did not approve this application. Contact the platform administrator if you believe this is a mistake." : approvalStatus === "restricted" ? "Your account has been restricted by the platform. Contact the sole administrator for assistance." : approvalStatus === "error" ? "The account status service could not be reached. Your account remains locked until verification succeeds." : "Your registration profile and wallet are created automatically. The sole administrator must approve the account before any customer dashboard data or account actions become available."}</p>
         {data.profile?.user_code && <p><b>Account reference:</b> {data.profile.user_code}</p>}
         {notice && <div className="toast" role="status">{notice}</div>}
-        <button className="primary-button" style={{marginTop:16}} onClick={async()=>{if(session&&(approvalStatus==="checking"||approvalStatus==="approved")){await loadData(true);}else{if(session&&supabase)await supabase.auth.signOut();setSession(null);setApprovalStatus("signed_out");setRegistrationPending(false);setAuthMode("login");setAuthOpen(true);}}}>
-          {checking ? "Check status again" : "Continue to sign in"} <ChevronRight size={16}/>
-        </button>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:16}}><button className="primary-button" onClick={async()=>{if(session){await loadData(true);return;}setRegistrationPending(false);setApprovalStatus("signed_out");setAuthMode("login");setAuthOpen(true);setNotice("Enter the email and password you registered with. Login will only succeed after the administrator approves your account.");}}>{checking ? "Check status again" : rejected ? "Return to login" : "I have been approved — sign in"} <ChevronRight size={16}/></button><button className="subtle-button" onClick={()=>{if(session&&supabase)supabase.auth.signOut();setSession(null);setRegistrationPending(false);setApprovalStatus("signed_out");setAuthMode("login");setAuthOpen(true);setNotice("");}}>Back to login</button></div>
       </section>
     </div>;
   }
