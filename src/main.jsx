@@ -132,10 +132,13 @@ function App() {
     e.preventDefault();
     if (!messageBody.trim() || !session) return;
     setBusy(true);
-    const {error} = await supabase.from("support_messages").insert({user_id:session.user.id,sender_id:session.user.id,sender_role:"user",body:messageBody.trim(),subject:"Customer support"});
-    setBusy(false);
-    if (error) setNotice("Message could not be sent: " + error.message);
-    else { setMessageBody(""); setNotice("Your message was sent to support."); await loadData(true); }
+    try {
+      await callUserApi(session,"support",{method:"POST",body:JSON.stringify({subject:"Customer support",body:messageBody.trim()})});
+      setMessageBody("");
+      setNotice("Your message was sent to support.");
+      await loadData(true);
+    } catch (error) { setNotice("Message could not be sent: " + error.message); }
+    finally { setBusy(false); }
   }
   async function markNotificationRead(item) {
     const {error} = await supabase.from("user_notifications").update({read_at:new Date().toISOString()}).eq("id",item.id).eq("user_id",session.user.id);
