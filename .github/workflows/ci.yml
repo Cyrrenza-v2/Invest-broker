@@ -26,5 +26,11 @@ jobs:
         run: npm test
       - name: Build web app
         run: npm run build
-      - name: Verify output
-        run: test -s dist/index.html
+      - name: Verify user/admin installable app output
+        run: |
+          test -s dist/index.html
+          test -s dist/admin.html
+          test -s dist/user.webmanifest
+          test -s dist/admin.webmanifest
+          test -s dist/sw.js
+          test -s dist/icon.svg
