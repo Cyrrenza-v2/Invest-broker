@@ -22,6 +22,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Test route contracts
+        run: npm test
       - name: Build web app
         run: npm run build
       - name: Verify output
