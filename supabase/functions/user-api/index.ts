@@ -22,8 +22,17 @@ Deno.serve(async req => {
   if (!token) return json(req,{error:"Authentication required"},401);
   const {data:{user},error:authError}=await authClient.auth.getUser(token);
   if(authError||!user) return json(req,{error:"Invalid or expired session"},401);
-  if(["admin","manager","system"].includes(user.app_metadata?.role)) return json(req,{error:"Use the Admin API for privileged accounts"},403);
+  if(user.app_metadata?.role==="admin") return json(req,{error:"Use the Admin API for privileged accounts"},403);
   const route=new URL(req.url).pathname.split("/").filter(Boolean).slice(-1)[0]??"me";
+  const {data:profile,error:profileError}=await db.from("profiles").select("id,approval_status,account_status").eq("id",user.id).maybeSingle();
+  if(profileError) return json(req,{error:"Unable to verify account approval"},500);
+  if(!profile) return json(req,{error:"Customer profile is not provisioned"},403);
+  if(route!=="me"&&route!=="profile"&&profile.approval_status!=="approved") {
+    return json(req,{error:profile.approval_status==="rejected"?"Account application rejected":"Administrator approval is required before account access"},403);
+  }
+  if(route!=="me"&&route!=="profile"&&profile.account_status!=="active") {
+    return json(req,{error:"This account is not active"},403);
+  }
   try {
     if (req.method === "POST" && route === "support") {
       const payload = await req.json().catch(() => null);
@@ -36,7 +45,7 @@ Deno.serve(async req => {
     }
     if (req.method === "POST") return json(req,{error:"This action is not enabled"},405);
     if(route==="me"||route==="profile"){
-      const {data,error}=await db.from("profiles").select("id,user_code,full_name,phone,kyc_status,account_status,created_at,updated_at").eq("id",user.id).maybeSingle();
+      const {data,error}=await db.from("profiles").select("id,user_code,full_name,phone,kyc_status,account_status,approval_status,created_at,updated_at").eq("id",user.id).maybeSingle();
       if(error) throw error; return json(req,{data});
     }
     const map:Record<string,{table:string;select:string;owner:string;limit:number}> = {
