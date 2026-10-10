@@ -26,6 +26,13 @@ Deno.serve(async req=>{
  const {data:claimsData,error:claimsError}=await authClient.auth.getClaims(token);
  if(claimsError||claimsData?.claims?.aal!=="aal2") return json(req,{error:"Verified MFA (AAL2) is required"},403);
  const urlObj=new URL(req.url); const route=urlObj.pathname.split("/").filter(Boolean).slice(-1)[0]??"dashboard";
+  const routeRoles:Record<string,string[]> = {
+   dashboard:["admin","manager"], users:["admin","manager"], investments:["admin","manager"],
+   "investment-plans":["admin","manager"], returns:["admin","manager"], deposits:["admin","manager"],
+   withdrawals:["admin","manager"], compliance:["admin","manager"], treasury:["admin"], "audit-logs":["admin"]
+  };
+  if(!routeRoles[route]) return json(req,{error:"Route not found"},404);
+  if(!routeRoles[route].includes(user.app_metadata?.role)) return json(req,{error:"Insufficient permission for this resource"},403);
  const limit=Math.min(Math.max(Number(urlObj.searchParams.get("limit")??100),1),200);
  try{
   if(route==="dashboard"){
