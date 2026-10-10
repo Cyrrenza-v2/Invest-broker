@@ -1,25 +1,30 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
 import {
   Activity, ArrowDownLeft, ArrowUpRight, Bell, BriefcaseBusiness, CheckCircle2,
-  ChevronDown, CircleHelp, Clock3, CreditCard, Eye, EyeOff, FileCheck2,
-  LayoutDashboard, LockKeyhole, LogOut, Menu, Search, ShieldCheck, TrendingUp,
-  Users, Wallet, X
+  ChevronRight, CircleHelp, Clock3, CreditCard, Eye, EyeOff, FileCheck2,
+  FileText, LayoutDashboard, LockKeyhole, LogOut, Menu, MessageCircle,
+  ShieldCheck, TrendingUp, UserRound, Wallet, X, Landmark, CalendarDays,
+  RefreshCw, AlertCircle
 } from "lucide-react";
 import "./style.css";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://rjgzvpkyccfpnpzlbcuc.supabase.co";
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
-
-const money = (n) => new Intl.NumberFormat("en-US", {
-  style: "currency", currency: "NGN", maximumFractionDigits: 2
-}).format(n);
+const money = (n, currency = "NGN") => new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(n || 0));
+const date = value => value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value)) : "Not set";
+const roleIsManager = user => ["admin", "manager"].includes(user?.app_metadata?.role);
+const navItems = [
+  ["Overview", LayoutDashboard], ["My investments", BriefcaseBusiness], ["My wallet", Wallet],
+  ["Profit", TrendingUp], ["Withdrawals", ArrowUpRight], ["Deposits", ArrowDownLeft],
+  ["Transactions", Activity], ["Verification", FileCheck2], ["Documents", FileText],
+  ["Notifications", Bell], ["Support & complaints", MessageCircle], ["Security", ShieldCheck]
+];
 
 function App() {
   const [section, setSection] = useState("Overview");
-  const [adminMode, setAdminMode] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [showBalance, setShowBalance] = useState(true);
   const [notice, setNotice] = useState("");
@@ -27,132 +32,169 @@ function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [liveData, setLiveData] = useState({ profile: null, wallet: null, investments: [], ledger: [], deposits: [], withdrawals: [], usersCount: null, loading: false });
-  const configured = Boolean(supabase);
-  const isManager = ["admin", "manager"].includes(session?.user?.app_metadata?.role);
+  const [refreshing, setRefreshing] = useState(false);
+  const [data, setData] = useState({ profile:null, wallet:null, plans:[], investments:[], ledger:[], deposits:[], withdrawals:[], bankAccounts:[], notifications:[], documents:[], messages:[], complaints:[], loading:false });
+  const [complaint, setComplaint] = useState({category:"other",subject:"",description:""});
+  const [messageBody, setMessageBody] = useState("");
+  const [showComplaintForm, setShowComplaintForm] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
+    supabase.auth.getSession().then(({data}) => setSession(data.session));
+    const {data: listener} = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    if (!supabase || !session?.user?.id) {
-      setLiveData({ profile: null, wallet: null, investments: [], ledger: [], deposits: [], withdrawals: [], usersCount: null, loading: false });
-      setAdminMode(false);
-      return;
-    }
-    let cancelled = false;
-    async function loadRecords() {
-      setLiveData(previous => ({ ...previous, loading: true }));
-      const uid = session.user.id;
-      const [profileRes, walletRes, investmentsRes, ledgerRes, depositsRes, withdrawalsRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("id", uid).maybeSingle(),
-        supabase.from("wallets").select("*").eq("user_id", uid).maybeSingle(),
-        supabase.from("investments").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("ledger_entries").select("*").eq("status", "posted").order("created_at", { ascending: false }).limit(100),
-        supabase.from("deposits").select("*").order("created_at", { ascending: false }).limit(50),
-        supabase.from("withdrawals").select("*").order("created_at", { ascending: false }).limit(50)
-      ]);
-      let usersCount = null;
-      if (["admin", "manager"].includes(session.user.app_metadata?.role)) {
-        const countRes = await supabase.from("profiles").select("id", { count: "exact", head: true });
-        usersCount = countRes.count ?? null;
-      }
-      if (cancelled) return;
-      setLiveData({ profile: profileRes.data, wallet: walletRes.data, investments: investmentsRes.data || [], ledger: ledgerRes.data || [], deposits: depositsRes.data || [], withdrawals: withdrawalsRes.data || [], usersCount, loading: false });
-      if (["admin", "manager"].includes(session.user.app_metadata?.role)) setAdminMode(true);
-      if ([profileRes, walletRes, investmentsRes, ledgerRes, depositsRes, withdrawalsRes].some(result => result.error)) {
-        setNotice("Signed in, but some records could not be loaded. Check table permissions and Supabase policies.");
-      }
-    }
-    loadRecords();
-    return () => { cancelled = true; };
-  }, [session?.user?.id, session?.user?.app_metadata?.role]);
+  const loadData = async (quiet = false) => {
+    if (!supabase || !session?.user?.id) return;
+    if (quiet) setRefreshing(true);
+    else setData(previous => ({...previous, loading:true}));
+    const userId = session.user.id;
+    const [profile,wallet,plans,investments,ledger,deposits,withdrawals,bankAccounts,notifications,documents,messages,complaints] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id",userId).maybeSingle(),
+      supabase.from("wallets").select("*").eq("user_id",userId).maybeSingle(),
+      supabase.from("investment_plans").select("*").eq("is_active",true).order("duration_days"),
+      supabase.from("investments").select("*,investment_plans(name,duration_days,return_rate,return_method)").order("created_at",{ascending:false}).limit(100),
+      supabase.from("ledger_entries").select("*").order("created_at",{ascending:false}).limit(200),
+      supabase.from("deposits").select("*").order("created_at",{ascending:false}).limit(100),
+      supabase.from("withdrawals").select("*").order("created_at",{ascending:false}).limit(100),
+      supabase.from("user_bank_accounts").select("*").order("created_at",{ascending:false}),
+      supabase.from("user_notifications").select("*").order("created_at",{ascending:false}).limit(100),
+      supabase.from("user_documents").select("*").order("created_at",{ascending:false}),
+      supabase.from("support_messages").select("*").order("created_at",{ascending:false}).limit(100),
+      supabase.from("user_complaints").select("*").order("created_at",{ascending:false}).limit(100)
+    ]);
+    const errors = [profile,wallet,plans,investments,ledger,deposits,withdrawals,bankAccounts,notifications,documents,messages,complaints].filter(x=>x.error);
+    setData({
+      profile:profile.data, wallet:wallet.data, plans:plans.data||[], investments:investments.data||[],
+      ledger:ledger.data||[], deposits:deposits.data||[], withdrawals:withdrawals.data||[],
+      bankAccounts:bankAccounts.data||[], notifications:notifications.data||[], documents:documents.data||[],
+      messages:messages.data||[], complaints:complaints.data||[], loading:false
+    });
+    setRefreshing(false);
+    if (errors.length) setNotice("Some sections could not load. The page only shows records permitted by your account's database policies.");
+  };
 
-  const userItems = [
-    ["Overview", LayoutDashboard], ["My investments", BriefcaseBusiness],
-    ["Wallet", Wallet], ["Transactions", Activity], ["Verification", FileCheck2]
-  ];
-  const adminItems = [
-    ["Overview", LayoutDashboard], ["Users", Users], ["Investments", BriefcaseBusiness],
-    ["Deposits & withdrawals", CreditCard], ["Compliance", ShieldCheck], ["Audit log", Activity]
-  ];
-  const items = adminMode && isManager ? adminItems : userItems;
+  useEffect(() => { if (session?.user?.id) loadData(); else setData({profile:null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false}); }, [session?.user?.id]);
+
+  const postedLedger = data.ledger.filter(entry => entry.status === "posted");
+  const availableBalance = postedLedger.reduce((sum, entry) => {
+    const amount = Number(entry.amount || 0);
+    if (amount < 0) return sum + amount;
+    if (["withdrawal","principal_debit","fee"].includes(entry.entry_type)) return sum - amount;
+    if (entry.entry_type === "reversal") return sum + amount;
+    return sum + amount;
+  }, 0);
+  const invested = data.investments.filter(item => ["active","matured","under_review"].includes(item.status)).reduce((sum,item)=>sum+Number(item.principal||0),0);
+  const profitCredited = postedLedger.filter(item=>item.entry_type==="profit_credit").reduce((sum,item)=>sum+Math.abs(Number(item.amount||0)),0);
+  const activeInvestments = data.investments.filter(item=>item.status==="active");
+  const nextMaturity = activeInvestments.map(item=>item.maturity_at).filter(Boolean).sort()[0];
+  const unreadCount = data.notifications.filter(item=>!item.read_at).length;
+  const isManager = roleIsManager(session?.user);
+  const displayName = data.profile?.full_name || session?.user?.user_metadata?.full_name || session?.user?.email?.split("@")[0] || "Investor";
 
   async function signIn() {
-    if (!supabase) {
-      setNotice("Supabase is not connected yet. Configure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY after the dedicated project is selected.");
-      return;
-    }
-    if (!email.trim()) {
-      setNotice("Enter your email address first.");
-      return;
-    }
+    if (!supabase) { setNotice("The Supabase publishable key is not configured in this deployment."); return; }
+    if (!email.trim()) { setNotice("Enter your email address first."); return; }
     setBusy(true);
-    const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: window.location.origin } });
+    const {error} = await supabase.auth.signInWithOtp({email:email.trim(),options:{emailRedirectTo:window.location.origin}});
     setBusy(false);
-    setNotice(error ? error.message : "A sign-in link has been requested. Check your email.");
+    setNotice(error ? error.message : "Sign-in link requested. Check your email to continue.");
+  }
+  async function signOut() { if (supabase) await supabase.auth.signOut(); setSession(null); setSection("Overview"); setNotice("You are signed out."); }
+  function go(name) { setSection(name); setMobileNav(false); setNotice(""); }
+  function disabledAction(action) { setNotice(action + " is not enabled yet. It will remain disabled until the secure server-side workflow and authorized payment provider are verified."); }
+  async function sendComplaint(e) {
+    e.preventDefault();
+    if (!session || !complaint.subject.trim() || complaint.description.trim().length < 10) return;
+    setBusy(true);
+    const {error} = await supabase.from("user_complaints").insert({...complaint,user_id:session.user.id});
+    setBusy(false);
+    if (error) setNotice("Complaint could not be submitted: " + error.message);
+    else { setComplaint({category:"other",subject:"",description:""}); setShowComplaintForm(false); setNotice("Your complaint was submitted."); await loadData(true); }
+  }
+  async function sendSupportMessage(e) {
+    e.preventDefault();
+    if (!messageBody.trim() || !session) return;
+    setBusy(true);
+    const {error} = await supabase.from("support_messages").insert({user_id:session.user.id,sender_id:session.user.id,sender_role:"user",body:messageBody.trim(),subject:"Customer support"});
+    setBusy(false);
+    if (error) setNotice("Message could not be sent: " + error.message);
+    else { setMessageBody(""); setNotice("Your message was sent to support."); await loadData(true); }
+  }
+  async function markNotificationRead(item) {
+    const {error} = await supabase.from("user_notifications").update({read_at:new Date().toISOString()}).eq("id",item.id).eq("user_id",session.user.id);
+    if (error) setNotice("Notifications are currently read-only. " + error.message);
+    else await loadData(true);
   }
 
-  async function signOut() {
-    if (supabase) await supabase.auth.signOut();
-    setSession(null);
-    setNotice("You are signed out.");
-  }
-
-  function selectSection(name) {
-    setSection(name);
-    setMobileNav(false);
-    if (name !== "Overview") setNotice(name + " is part of the platform foundation; secure data workflows are not live yet.");
-  }
-
-  return <div className="app-shell">
-    <aside className={"sidebar " + (mobileNav ? "sidebar-open" : "")}>
-      <div className="brand"><div className="brand-mark"><TrendingUp size={21}/></div><div><b>INVEST<span>BROKER</span></b><small>INVESTMENT PLATFORM</small></div><button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={18}/></button></div>
-      <div className="workspace-label">{adminMode ? "MANAGEMENT WORKSPACE" : "PERSONAL WORKSPACE"}</div>
-      <nav>{items.map(([label, Icon]) => <button key={label} onClick={() => selectSection(label)} className={"nav-item " + (section === label ? "active" : "")}><Icon size={18}/><span>{label}</span>{label === "Verification" && <span className="nav-dot"/>}</button>)}</nav>
+  return <div className="app-shell user-portal">
+    <aside className={"sidebar " + (mobileNav?"sidebar-open":"")}>
+      <div className="brand"><div className="brand-mark"><TrendingUp size={21}/></div><div><b>INVEST<span>BROKER</span></b><small>INVESTOR PORTAL</small></div><button className="icon-button mobile-close" onClick={()=>setMobileNav(false)} aria-label="Close menu"><X size={18}/></button></div>
+      <div className="workspace-label">MY ACCOUNT</div>
+      <nav>{navItems.map(([label,Icon])=><button key={label} onClick={()=>go(label)} className={"nav-item "+(section===label?"active":"")}><Icon size={18}/><span>{label}</span>{label==="Notifications"&&unreadCount>0&&<span className="nav-count">{unreadCount}</span>}</button>)}</nav>
       <div className="sidebar-bottom">
-        <div className="secure-card"><div className="secure-icon"><ShieldCheck size={18}/></div><b>Security first</b><p>Account security and compliance are core to the platform.</p><span><LockKeyhole size={12}/> Protected workspace</span></div>
-        <button className="nav-item" onClick={() => setNotice("Help centre is not connected yet.")}><CircleHelp size={18}/><span>Help & support</span></button>
-        <div className="profile-row"><div className="avatar">{session?.user?.email?.slice(0,1).toUpperCase() || "G"}</div><div className="profile-copy"><b>{liveData.profile?.full_name || session?.user?.email || "Guest preview"}</b><small>{session ? (isManager ? "Authorized manager" : "Authenticated customer") : "Not signed in"}</small></div><button className="icon-button" aria-label="Account options" onClick={() => session ? signOut() : setAuthOpen(true)}>{session ? <LogOut size={16}/> : <ChevronDown size={16}/>}</button></div>
+        <div className="secure-card"><div className="secure-icon"><ShieldCheck size={18}/></div><b>Your money, your records</b><p>Your account is isolated from manager tools and company treasury records.</p><span><LockKeyhole size={12}/> Protected workspace</span></div>
+        <div className="profile-row"><div className="avatar">{session?displayName.slice(0,1).toUpperCase():"G"}</div><div className="profile-copy"><b>{session?displayName:"Guest preview"}</b><small>{session?data.profile?.account_status||"Customer account":"Not signed in"}</small></div><button className="icon-button" aria-label={session?"Sign out":"Sign in"} onClick={()=>session?signOut():setAuthOpen(true)}>{session?<LogOut size={16}/>:<ChevronRight size={16}/>}</button></div>
       </div>
     </aside>
-    {mobileNav && <button className="scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation"/>}
+    {mobileNav&&<button className="scrim" onClick={()=>setMobileNav(false)} aria-label="Close navigation"/>}
     <main className="main-area">
-      <header className="topbar"><div className="top-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open menu"><Menu size={20}/></button><div className="breadcrumb">Workspace <span>/</span> <b>{section}</b></div></div><div className="top-actions"><span className={"connection-pill " + (configured ? "connected" : "")}><i/>{configured ? "Supabase configured" : "Backend not connected"}</span><button className="icon-button notification-button" onClick={() => setNotice("Notifications will appear here when the backend is connected.")} aria-label="Notifications"><Bell size={18}/><i/></button><button className="user-chip" onClick={() => { if (!session) { setAuthOpen(true); return; } if (!isManager) { setNotice("Admin access is restricted to manager accounts assigned by a trusted administrator."); return; } setAdminMode(!adminMode); setSection("Overview"); }}><div className="avatar small">{adminMode && isManager ? "A" : "U"}</div><span>{adminMode && isManager ? "Admin panel" : "My account"}</span><ChevronDown size={14}/></button></div></header>
+      <header className="topbar"><div className="top-left"><button className="icon-button mobile-menu" onClick={()=>setMobileNav(true)} aria-label="Open menu"><Menu size={20}/></button><div className="breadcrumb">My account <span>/</span> <b>{section}</b></div></div><div className="top-actions"><span className={"connection-pill "+(supabase?"connected":"")}><i/>{supabase?"Backend configured":"Preview mode"}</span><button className="icon-button notification-button" onClick={()=>go("Notifications")} aria-label="Notifications"><Bell size={18}/>{unreadCount>0&&<i/>}</button><button className="user-chip" onClick={()=>session?signOut():setAuthOpen(true)}><div className="avatar small">{session?displayName.slice(0,1).toUpperCase():"G"}</div><span>{session?"Sign out":"Sign in"}</span><ChevronRight size={14}/></button></div></header>
       <div className="content">
-        <div className="welcome-row"><div><div className="eyebrow"><span className="status-dot"/> INVEST BROKER <span className="tag">{configured ? (session ? "CONNECTED" : "READY") : "PREVIEW"}</span></div><h1>{section === "Overview" ? (adminMode ? "Management overview" : "Welcome to your workspace") : section}</h1><p>{section === "Overview" ? (adminMode ? "Monitor account activity, reviews and platform operations." : "Your investment account, organized in one clear view.") : "This area is scaffolded for the next implementation phase."}</p></div><button className="primary-button" onClick={() => setAuthOpen(true)}>{session ? "Account settings" : "Sign in"} <ArrowUpRight size={16}/></button></div>
-        {!configured && <div className="notice-banner"><div className="notice-icon"><LockKeyhole size={18}/></div><div><b>Backend connection required</b><p>This is a working UI foundation using preview-only sample data. Authentication, balances, deposits, withdrawals and investments are not active until a dedicated Supabase project and secure backend are configured.</p></div><span className="notice-state">NOT LIVE</span></div>}
-        {notice && <div className="toast" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={16}/></button></div>}
-        <section className="metrics-grid">
-          <Metric title={adminMode ? "Total users" : "Portfolio value"} value={adminMode && isManager ? (liveData.usersCount ?? "—") : money(liveData.ledger.reduce((sum, entry) => sum + Number(entry.amount || 0), 0))} subtitle={adminMode ? "Awaiting secure database" : "Connect an account to load live data"} icon={Wallet} tone="blue"/>
-          <Metric title={adminMode && isManager ? "Pending reviews" : "Active investments"} value={adminMode && isManager ? liveData.withdrawals.filter(item => ["pending","under_review"].includes(item.status)).length : liveData.investments.filter(item => item.status === "active").length} subtitle={liveData.loading ? "Loading records…" : "From shared Supabase records"} icon={BriefcaseBusiness} tone="violet"/>
-          <Metric title={adminMode && isManager ? "Pending withdrawals" : "Total returns"} value={adminMode && isManager ? liveData.withdrawals.filter(item => ["pending","under_review","approved","processing"].includes(item.status)).length : money(liveData.ledger.filter(item => item.entry_type === "profit_credit").reduce((sum, entry) => sum + Number(entry.amount || 0), 0))} subtitle={liveData.loading ? "Loading records…" : "Verified ledger entries only"} icon={TrendingUp} tone="green"/>
-          <Metric title={adminMode && isManager ? "Security events" : "Account status"} value={session ? (liveData.profile?.account_status || "Signed in") : "Guest"} subtitle={liveData.profile?.kyc_status ? "KYC: " + liveData.profile.kyc_status.replace("_", " ") : (configured ? "Waiting for sign-in" : "Backend setup pending")} icon={ShieldCheck} tone="amber"/>
-        </section>
-        <div className="section-grid">
-          <section className="panel portfolio-panel"><div className="panel-heading"><div><h2>{adminMode ? "Platform activity" : "Portfolio snapshot"}</h2><p>{adminMode ? "Latest platform events" : "A clear view of your account at a glance"}</p></div><button className="subtle-button" onClick={() => setNotice("Live records are unavailable until backend integration is complete.")}>View details <ArrowUpRight size={14}/></button></div>
-            <div className="balance-card"><div className="balance-top"><span>{adminMode ? "PLATFORM TOTALS" : "TOTAL PORTFOLIO VALUE"}</span><button onClick={() => setShowBalance(!showBalance)} aria-label="Toggle balance visibility">{showBalance ? <Eye size={17}/> : <EyeOff size={17}/>}</button></div><div className="balance-value">{showBalance ? (session ? money(liveData.ledger.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)) : "— — —") : "••••••"}</div><div className="balance-foot"><span><Clock3 size={14}/> Waiting for verified data</span><span className="balance-badge">PREVIEW ONLY</span></div><div className="balance-graph"><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/><div/></div></div>
-            <div className="panel-footnote"><ShieldCheck size={15}/> {session ? "Read-only financial summary from the shared backend. Financial actions remain disabled." : "No live customer records shown until you sign in."}</div>
-          </section>
-          <section className="panel quick-panel"><div className="panel-heading"><div><h2>Quick actions</h2><p>Common account tasks</p></div></div><div className="quick-actions"><QuickAction icon={ArrowDownLeft} title="Add funds" desc="Deposit workflow" onClick={() => setNotice("Deposits are disabled in preview mode.")}/><QuickAction icon={ArrowUpRight} title="Withdraw" desc="Withdrawal workflow" onClick={() => setNotice("Withdrawals are disabled in preview mode.")}/><QuickAction icon={BriefcaseBusiness} title="Explore plans" desc="Investment marketplace" onClick={() => selectSection("My investments")}/><QuickAction icon={FileCheck2} title="Verify identity" desc="KYC & compliance" onClick={() => selectSection("Verification")}/></div><div className="quick-foot"><LockKeyhole size={15}/> Financial actions stay disabled until server-side controls are implemented.</div></section>
-        </div>
-        <section className="panel activity-panel"><div className="panel-heading"><div><h2>{adminMode ? "Recent audit events" : "Recent transactions"}</h2><p>{adminMode ? "A tamper-aware activity trail will appear here" : "Your account activity will appear here"}</p></div><button className="icon-button" onClick={() => setNotice("No live transactions are available in preview mode.")} aria-label="Search transactions"><Search size={17}/></button></div><div className="empty-state"><div className="empty-illustration"><Activity size={24}/></div><b>No activity to show yet</b><p>Once the backend is connected and verified, account events will appear in this space.</p></div></section>
-        <footer className="footer"><span>© {new Date().getFullYear()} Invest Broker</span><span><ShieldCheck size={13}/> Secure-by-design foundation</span><span>Preview • Not for financial transactions</span></footer>
+        <div className="welcome-row"><div><div className="eyebrow"><span className="status-dot"/> INVEST BROKER <span className="tag">{session?"CUSTOMER PORTAL":"PREVIEW"}</span></div><h1>{section==="Overview"?"Welcome back, "+displayName:section}</h1><p>{section==="Overview"?"Your investments, wallet and account activity in one place.":sectionDescription(section)}</p></div><div className="header-actions"><button className="subtle-button" onClick={()=>loadData(true)} disabled={!session||refreshing}><RefreshCw size={15} className={refreshing?"spin":""}/> Refresh</button>{!session&&<button className="primary-button" onClick={()=>setAuthOpen(true)}>Sign in securely <ChevronRight size={16}/></button>}</div></div>
+        {!session&&<div className="notice-banner"><div className="notice-icon"><LockKeyhole size={18}/></div><div><b>Sign in to view your account</b><p>This preview does not contain sample money or fabricated investment records. Sign in with the email associated with your account to load your own permitted records.</p></div><span className="notice-state">PRIVATE</span></div>}
+        {notice&&<div className="toast" role="status"><span>{notice}</span><button onClick={()=>setNotice("")} aria-label="Dismiss notice"><X size={16}/></button></div>}
+        {isManager&&<div className="notice-banner"><div className="notice-icon"><ShieldCheck size={18}/></div><div><b>Manager account detected</b><p>This interface is the customer portal. Use the separately authorized admin interface for management actions.</p></div><span className="notice-state">USER SIDE</span></div>}
+        {section==="Overview"&&<Overview data={data} availableBalance={availableBalance} invested={invested} profitCredited={profitCredited} activeInvestments={activeInvestments} nextMaturity={nextMaturity} showBalance={showBalance} setShowBalance={setShowBalance} go={go} disabledAction={disabledAction} />}
+        {section==="My investments"&&<Investments data={data} go={go} />}
+        {section==="My wallet"&&<WalletPage data={data} availableBalance={availableBalance} invested={invested} profitCredited={profitCredited} showBalance={showBalance} setShowBalance={setShowBalance} disabledAction={disabledAction} />}
+        {section==="Profit"&&<ProfitPage ledger={postedLedger} profitCredited={profitCredited} investments={data.investments} />}
+        {section==="Withdrawals"&&<Withdrawals data={data} availableBalance={availableBalance} disabledAction={disabledAction} />}
+        {section==="Deposits"&&<Deposits data={data} disabledAction={disabledAction} />}
+        {section==="Transactions"&&<Transactions ledger={data.ledger} deposits={data.deposits} withdrawals={data.withdrawals} />}
+        {section==="Verification"&&<Verification profile={data.profile} bankAccounts={data.bankAccounts} />}
+        {section==="Documents"&&<Documents documents={data.documents} />}
+        {section==="Notifications"&&<Notifications items={data.notifications} onRead={markNotificationRead} />}
+        {section==="Support & complaints"&&<Support messages={data.messages} complaints={data.complaints} messageBody={messageBody} setMessageBody={setMessageBody} sendSupportMessage={sendSupportMessage} complaint={complaint} setComplaint={setComplaint} showComplaintForm={showComplaintForm} setShowComplaintForm={setShowComplaintForm} sendComplaint={sendComplaint} busy={busy} />}
+        {section==="Security"&&<Security session={session} disabledAction={disabledAction} />}
+        <footer className="footer"><span>© {new Date().getFullYear()} Invest Broker</span><span><ShieldCheck size={13}/> Private customer workspace</span><span>Financial actions require secure backend verification</span></footer>
       </div>
     </main>
-    {authOpen && <div className="modal-backdrop" onClick={() => setAuthOpen(false)}><div className="auth-modal" onClick={e => e.stopPropagation()}><button className="modal-close icon-button" onClick={() => setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>{session ? "Account settings" : "Sign in securely"}</h2><p>{configured ? "We’ll send a secure one-time sign-in link to your email." : "Authentication will be available after the dedicated backend is connected."}</p>{!session && <><label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"/><button className="primary-button full-button" onClick={signIn} disabled={busy}>{busy ? "Requesting link…" : "Send sign-in link"} <ArrowUpRight size={16}/></button></>}{session && <button className="primary-button full-button" onClick={signOut}>Sign out <LogOut size={16}/></button>}<div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
+    {authOpen&&<div className="modal-backdrop" onClick={()=>setAuthOpen(false)}><div className="auth-modal" onClick={e=>e.stopPropagation()}><button className="modal-close icon-button" onClick={()=>setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>Sign in securely</h2><p>We’ll send a one-time sign-in link to your email address.</p><label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email"/><button className="primary-button full-button" onClick={signIn} disabled={busy}>{busy?"Requesting link…":"Send sign-in link"} <ChevronRight size={16}/></button><div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
   </div>;
 }
 
-function Metric({ title, value, subtitle, icon: Icon, tone }) {
-  return <div className="metric-card"><div className={"metric-icon " + tone}><Icon size={19}/></div><div className="metric-title">{title}</div><div className="metric-value">{value}</div><div className="metric-subtitle">{subtitle}</div></div>;
+function sectionDescription(name) {
+ const descriptions={"My investments":"Review your investment records, plan terms and maturity dates.","My wallet":"Your customer wallet is separate from company treasury accounts.","Profit":"See the difference between credited profit and returns that have not yet been verified.","Withdrawals":"Track withdrawal requests and their confirmed processing status.","Deposits":"Track deposits verified by the authorized funding provider.","Transactions":"A chronological view of posted ledger entries and funding activity.","Verification":"Review your KYC status and verified payout account details.","Documents":"Access documents and statements made available to your account.","Notifications":"Account notices and status updates from the platform.","Support & complaints":"Contact support or submit a complaint tied to your account.","Security":"Review your session and account security controls."};
+ return descriptions[name]||"Your account details.";
 }
-function QuickAction({ icon: Icon, title, desc, onClick }) {
-  return <button className="quick-action" onClick={onClick}><div className="quick-icon"><Icon size={18}/></div><div><b>{title}</b><small>{desc}</small></div><ArrowUpRight size={15} className="quick-arrow"/></button>;
+function Panel({title,subtitle,children,action}) { return <section className="panel user-panel"><div className="panel-heading"><div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>{children}</section>; }
+function Metric({title,value,subtitle,icon:Icon,tone="blue"}) { return <div className="metric-card"><div className={"metric-icon "+tone}><Icon size={19}/></div><div className="metric-title">{title}</div><div className="metric-value">{value}</div><div className="metric-subtitle">{subtitle}</div></div>; }
+function Empty({title,body,action}) { return <div className="empty-state"><div className="empty-illustration"><Activity size={24}/></div><b>{title}</b><p>{body}</p>{action}</div>; }
+function Status({value}) { const label=(value||"unknown").replaceAll("_"," "); return <span className={"status-tag status-"+(value||"unknown")}>{label}</span>; }
+function Table({columns,rows,empty="No records yet"}) { return rows.length?<div className="table-wrap"><table><thead><tr>{columns.map(c=><th key={c.label}>{c.label}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={row.id||i}>{columns.map(c=><td key={c.label}>{c.render?c.render(row):row[c.key]??"—"}</td>)}</tr>)}</tbody></table></div>:<Empty title={empty} body="When verified records become available, they will appear here automatically."/>; }
+
+function Overview({data,availableBalance,invested,profitCredited,activeInvestments,nextMaturity,showBalance,setShowBalance,go,disabledAction}) {
+ return <>
+  <div className="metrics-grid"><Metric title="Available wallet balance" value={showBalance?money(availableBalance):"••••••"} subtitle="Posted ledger entries only" icon={Wallet} tone="blue"/><Metric title="Total invested" value={showBalance?money(invested):"••••••"} subtitle={activeInvestments.length+" active investment(s)"} icon={BriefcaseBusiness} tone="violet"/><Metric title="Profit credited" value={showBalance?money(profitCredited):"••••••"} subtitle="Confirmed ledger credits only" icon={TrendingUp} tone="green"/><Metric title="Next maturity" value={date(nextMaturity)} subtitle="Based on active investments" icon={CalendarDays} tone="amber"/></div>
+  <div className="section-grid"><Panel title="My wallet" subtitle="Your own customer wallet"><div className="wallet-highlight"><div><span>AVAILABLE BALANCE</span><strong>{showBalance?money(availableBalance):"••••••"}</strong></div><button className="icon-button" onClick={()=>setShowBalance(!showBalance)} aria-label="Toggle balance">{showBalance?<Eye size={17}/>:<EyeOff size={17}/>}</button></div><div className="action-row"><button className="primary-button" onClick={()=>disabledAction("Deposit") }><ArrowDownLeft size={16}/> Deposit</button><button className="secondary-button" onClick={()=>disabledAction("Withdrawal") }><ArrowUpRight size={16}/> Withdraw</button><button className="secondary-button" onClick={()=>go("My wallet")}>Wallet details <ChevronRight size={15}/></button></div><p className="small-note"><LockKeyhole size={14}/> Your wallet is not the company treasury wallet.</p></Panel>
+   <Panel title="Investment summary" subtitle="Your current investment records" action={<button className="subtle-button" onClick={()=>go("My investments")}>View all <ChevronRight size={14}/></button>}>{activeInvestments.length?<div className="investment-mini-list">{activeInvestments.slice(0,3).map(item=><div className="investment-mini" key={item.id}><div className="mini-icon"><BriefcaseBusiness size={17}/></div><div className="mini-copy"><b>{item.investment_code}</b><span>{item.investment_plans?.name||"Investment plan"} · Matures {date(item.maturity_at)}</span></div><div className="mini-amount">{money(item.principal,item.currency)}<Status value={item.status}/></div></div>)}</div>:<Empty title="No active investments" body="Your active investments will appear here after they are confirmed by the platform."/>}</Panel></div>
+  <Panel title="Recent activity" subtitle="Latest verified account activity" action={<button className="subtle-button" onClick={()=>go("Transactions")}>All transactions <ChevronRight size={14}/></button>}><Table columns={[{label:"Reference",render:r=><b>{r.reference}</b>},{label:"Activity",render:r=>r.entry_type.replaceAll("_"," ")},{label:"Date",render:r=>date(r.created_at)},{label:"Amount",render:r=><span className={Number(r.amount)>=0?"amount-positive":"amount-negative"}>{money(r.amount,r.currency)}</span>},{label:"Status",render:r=><Status value={r.status}/>}]} rows={data.ledger.slice(0,5)}/></Panel>
+ </>;
 }
+function Investments({data,go}) { return <><Panel title="My investments" subtitle="Investment status, principal and maturity"><Table columns={[{label:"Investment",render:r=><><b>{r.investment_code}</b><small className="cell-sub">{r.investment_plans?.name||"Plan details"}</small></>},{label:"Principal",render:r=>money(r.principal,r.currency)},{label:"Started",render:r=>date(r.started_at||r.created_at)},{label:"Maturity",render:r=>date(r.maturity_at)},{label:"Status",render:r=><Status value={r.status}/>},{label:"Details",render:r=><button className="text-button" onClick={()=>go("Profit")}>Return details <ChevronRight size={13}/></button>}]} rows={data.investments}/></Panel><Panel title="Available investment plans" subtitle="Only active plans published by the platform"><Table columns={[{label:"Plan",key:"name"},{label:"Duration",render:r=>r.duration_days+" days"},{label:"Minimum",render:r=>money(r.minimum_amount,r.currency)},{label:"Return method",render:r=>r.return_method},{label:"Terms",render:r=>r.terms_version}]} rows={data.plans} empty="No active plans are currently available"/></Panel></>; }
+function WalletPage({data,availableBalance,invested,profitCredited,showBalance,setShowBalance,disabledAction}) { return <><div className="metrics-grid"><Metric title="Available balance" value={showBalance?money(availableBalance):"••••••"} subtitle="Posted ledger total" icon={Wallet}/><Metric title="Invested" value={showBalance?money(invested):"••••••"} subtitle="Active, matured or under review" icon={BriefcaseBusiness} tone="violet"/><Metric title="Profit earned" value={showBalance?money(profitCredited):"••••••"} subtitle="Posted profit credits" icon={TrendingUp} tone="green"/></div><Panel title="My wallet" subtitle={data.wallet?data.wallet.wallet_code:"Wallet record will appear after account provisioning"}><div className="wallet-highlight"><div><span>AVAILABLE BALANCE</span><strong>{showBalance?money(availableBalance):"••••••"}</strong></div><button className="icon-button" onClick={()=>setShowBalance(!showBalance)}>{showBalance?<Eye size={17}/>:<EyeOff size={17}/>}</button></div><div className="action-row"><button className="primary-button" onClick={()=>disabledAction("Deposit")}> <ArrowDownLeft size={16}/> Deposit</button><button className="secondary-button" onClick={()=>disabledAction("Withdrawal")}><ArrowUpRight size={16}/> Withdraw</button></div><p className="small-note"><ShieldCheck size={14}/> The balance is derived from posted ledger entries. Pending deposits and uncredited projected returns are excluded.</p></Panel><Panel title="Wallet ledger" subtitle="Every posted balance movement has a reference"><Table columns={[{label:"Reference",key:"reference"},{label:"Type",render:r=>r.entry_type.replaceAll("_"," ")},{label:"Date",render:r=>date(r.created_at)},{label:"Amount",render:r=>money(r.amount,r.currency)},{label:"Status",render:r=><Status value={r.status}/>}]} rows={data.ledger}/></Panel></>; }
+function ProfitPage({ledger,profitCredited,investments}) { const credits=ledger.filter(r=>r.entry_type==="profit_credit"); return <><div className="metrics-grid"><Metric title="Profit credited" value={money(profitCredited)} subtitle="Confirmed ledger credits" icon={TrendingUp} tone="green"/><Metric title="Profit pending" value="Not calculated" subtitle="No accrued-profit engine is enabled" icon={Clock3} tone="amber"/><Metric title="Active investments" value={investments.filter(r=>r.status==="active").length} subtitle="Investment records" icon={BriefcaseBusiness} tone="violet"/></div><div className="notice-banner"><div className="notice-icon"><AlertCircle size={18}/></div><div><b>Projected returns are not credited profit</b><p>Only posted profit-credit ledger entries are shown as earned. Pending or projected returns will appear after the investment calculation and approval service is implemented.</p></div></div><Panel title="Profit history" subtitle="Posted profit credits"><Table columns={[{label:"Reference",key:"reference"},{label:"Date",render:r=>date(r.created_at)},{label:"Amount",render:r=>money(r.amount,r.currency)},{label:"Status",render:r=><Status value={r.status}/>}]} rows={credits}/></Panel></>; }
+function Withdrawals({data,availableBalance,disabledAction}) { return <><div className="metrics-grid"><Metric title="Available balance" value={money(availableBalance)} subtitle="Posted ledger entries" icon={Wallet}/><Metric title="Pending requests" value={data.withdrawals.filter(r=>["pending","under_review"].includes(r.status)).length} subtitle="Awaiting review" icon={Clock3} tone="amber"/><Metric title="Completed" value={data.withdrawals.filter(r=>r.status==="completed").length} subtitle="Provider-confirmed" icon={CheckCircle2} tone="green"/></div><Panel title="Request a withdrawal" subtitle="Secure withdrawal submission is not enabled yet"><div className="withdrawal-callout"><div className="notice-icon"><LockKeyhole size={20}/></div><div><b>Withdrawal requests are temporarily disabled</b><p>The server-side balance reservation, compliance review, approval audit and payment-provider confirmation flow must be verified before you can submit a request.</p><button className="primary-button" onClick={()=>disabledAction("Withdrawal request")}>Request withdrawal <ArrowUpRight size={15}/></button></div></div><div className="info-grid"><Info label="Available" value={money(availableBalance)}/><Info label="Primary payout account" value={data.bankAccounts.find(r=>r.is_primary)?.provider_name||"Not linked"}/><Info label="Next eligible window" value="Not configured"/></div></Panel><Panel title="Withdrawal history" subtitle="Status changes from request to provider confirmation"><Table columns={[{label:"Reference",render:r=><b>{r.withdrawal_code}</b>},{label:"Amount",render:r=>money(r.amount,r.currency)},{label:"Requested",render:r=>date(r.created_at)},{label:"Status",render:r=><Status value={r.status}/>},{label:"Updated",render:r=>date(r.completed_at||r.reviewed_at||r.created_at)}]} rows={data.withdrawals}/></Panel></>; }
+function Deposits({data,disabledAction}) { return <><Panel title="Add funds" subtitle="Funding through an authorized provider only"><div className="withdrawal-callout"><div className="notice-icon"><Landmark size={20}/></div><div><b>Deposit provider is not configured</b><p>Do not transfer funds to a personal account. Deposit instructions will appear here only after an approved payment provider is connected and its verification callback is tested.</p><button className="primary-button" onClick={()=>disabledAction("Deposit")}>Start deposit <ArrowDownLeft size={15}/></button></div></div></Panel><Panel title="Deposit history" subtitle="Only provider-verified deposits should be credited"><Table columns={[{label:"Reference",render:r=><b>{r.deposit_code}</b>},{label:"Amount",render:r=>money(r.amount,r.currency)},{label:"Created",render:r=>date(r.created_at)},{label:"Provider",render:r=>r.provider||"—"},{label:"Status",render:r=><Status value={r.status}/> }]} rows={data.deposits}/></Panel></>; }
+function Transactions({ledger,deposits,withdrawals}) { const all=[...ledger.map(r=>({...r,displayRef:r.reference,type:r.entry_type,displayAmount:r.amount})),...deposits.map(r=>({...r,displayRef:r.deposit_code,type:"deposit request",displayAmount:r.amount})),...withdrawals.map(r=>({...r,displayRef:r.withdrawal_code,type:"withdrawal request",displayAmount:-Math.abs(Number(r.amount)),currency:r.currency}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)); return <Panel title="Transaction history" subtitle="Ledger entries and payment requests in date order"><Table columns={[{label:"Reference",render:r=><b>{r.displayRef}</b>},{label:"Transaction",render:r=>r.type.replaceAll("_"," ")},{label:"Date",render:r=>date(r.created_at)},{label:"Amount",render:r=>money(r.displayAmount,r.currency)},{label:"Status",render:r=><Status value={r.status}/>}]} rows={all}/></Panel>; }
+function Verification({profile,bankAccounts}) { return <><div className="metrics-grid"><Metric title="Identity verification" value={(profile?.kyc_status||"pending").replaceAll("_"," ")} subtitle="KYC status from your profile" icon={FileCheck2} tone="violet"/><Metric title="Account status" value={(profile?.account_status||"pending_kyc").replaceAll("_"," ")} subtitle="Platform access status" icon={ShieldCheck} tone="green"/></div><Panel title="Personal profile" subtitle="Verified account details"><div className="info-grid"><Info label="Customer ID" value={profile?.user_code||"Created after registration"}/><Info label="Full name" value={profile?.full_name||"Not provided"}/><Info label="Phone" value={profile?.phone||"Not provided"}/><Info label="KYC status" value={(profile?.kyc_status||"pending").replaceAll("_"," ")}/></div><p className="small-note"><LockKeyhole size={14}/> Personal information changes and KYC uploads require a secure verification workflow.</p></Panel><Panel title="Payout accounts" subtitle="Only masked account details are displayed"><Table columns={[{label:"Provider",key:"provider_name"},{label:"Account name",key:"account_name"},{label:"Account",render:r=>"•••• "+r.account_last4},{label:"Status",render:r=><Status value={r.status}/>},{label:"Primary",render:r=>r.is_primary?"Yes":"No"}]} rows={bankAccounts} empty="No payout account has been linked"/></Panel></>; }
+function Documents({documents}) { return <Panel title="Your documents" subtitle="Statements, confirmations and terms published to your account"><Table columns={[{label:"Document",key:"title"},{label:"Type",key:"document_type"},{label:"Version",key:"version"},{label:"Date",render:r=>date(r.created_at)},{label:"Status",render:r=><Status value={r.status}/>},{label:"Access",render:r=>r.storage_path?<span className="muted">Private file link pending</span>:"Not uploaded"}]} rows={documents} empty="No documents have been published yet"/></Panel>; }
+function Notifications({items,onRead}) { return <Panel title="Notifications" subtitle="Investment, payment and account-status updates"><Table columns={[{label:"Notice",render:r=><><b>{r.title}</b><small className="cell-sub">{r.body}</small></>},{label:"Date",render:r=>date(r.created_at)},{label:"Status",render:r=><Status value={r.read_at?"read":"unread"}/>},{label:"Action",render:r=>!r.read_at?<button className="text-button" onClick={()=>onRead(r)}>Mark read</button>:"—"}]} rows={items} empty="You're all caught up"/></Panel>; }
+function Support({messages,complaints,messageBody,setMessageBody,sendSupportMessage,complaint,setComplaint,showComplaintForm,setShowComplaintForm,sendComplaint,busy}) { return <><Panel title="Contact support" subtitle="Messages associated with your account"><form className="inline-form" onSubmit={sendSupportMessage}><textarea value={messageBody} onChange={e=>setMessageBody(e.target.value)} placeholder="How can our support team help?" minLength={1} maxLength={10000} required/><button className="primary-button" disabled={busy||!messageBody.trim()}>Send message <ChevronRight size={15}/></button></form><div className="message-list">{messages.map(m=><div className="message-item" key={m.id}><div className="message-icon"><MessageCircle size={16}/></div><div><b>{m.sender_role==="user"?"You":m.sender_role==="manager"?"Support team":"System"}</b><p>{m.body}</p><small>{date(m.created_at)}</small></div></div>)}</div></Panel><Panel title="Complaints" subtitle="Submit an issue and track its status" action={<button className="secondary-button" onClick={()=>setShowComplaintForm(!showComplaintForm)}>{showComplaintForm?"Cancel":"New complaint"}</button>}>{showComplaintForm&&<form className="complaint-form" onSubmit={sendComplaint}><label>Category<select value={complaint.category} onChange={e=>setComplaint({...complaint,category:e.target.value})}>{["account","deposit","withdrawal","investment","profit","security","other"].map(x=><option key={x} value={x}>{x}</option>)}</select></label><label>Subject<input value={complaint.subject} onChange={e=>setComplaint({...complaint,subject:e.target.value})} minLength={3} maxLength={200} required/></label><label>Description<textarea value={complaint.description} onChange={e=>setComplaint({...complaint,description:e.target.value})} minLength={10} maxLength={10000} required/></label><button className="primary-button" disabled={busy}>Submit complaint</button></form>}<Table columns={[{label:"Case ID",render:r=><b>{r.complaint_code}</b>},{label:"Subject",key:"subject"},{label:"Submitted",render:r=>date(r.created_at)},{label:"Status",render:r=><Status value={r.status}/>}]} rows={complaints} empty="No complaints submitted"/></Panel></>; }
+function Security({session,disabledAction}) { return <><Panel title="Account security" subtitle="Security settings for your authenticated session"><div className="security-list"><SecurityRow icon={LockKeyhole} title="Passwordless sign-in" detail="Authentication uses a one-time email link." status={session?"Available":"Sign in required"}/><SecurityRow icon={ShieldCheck} title="Two-factor authentication" detail="A dedicated MFA enrollment and recovery flow has not been configured." status="Not configured"/><SecurityRow icon={Activity} title="Active session" detail={session?.user?.email||"You are not signed in."} status={session?"Signed in":"Guest"}/><SecurityRow icon={Landmark} title="Payout account protection" detail="Bank account change verification must be completed before payout workflows are enabled." status="Protected workflow pending"/></div><button className="secondary-button" onClick={()=>disabledAction("Security settings change")}>Manage security settings</button></Panel><div className="notice-banner"><div className="notice-icon"><AlertCircle size={18}/></div><div><b>Financial controls remain locked</b><p>Withdrawal PIN, trusted-device management, login history and bank-change confirmation are not presented as active until their backend controls are implemented and tested.</p></div></div></>; }
+function Info({label,value}) { return <div className="info-cell"><span>{label}</span><b>{value}</b></div>; }
+function SecurityRow({icon:Icon,title,detail,status}) { return <div className="security-row"><div className="quick-icon"><Icon size={18}/></div><div className="security-copy"><b>{title}</b><small>{detail}</small></div><span className="muted">{status}</span></div>; }
 
 createRoot(document.getElementById("root")).render(<React.StrictMode><App/></React.StrictMode>);
