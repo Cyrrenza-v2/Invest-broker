@@ -32,7 +32,12 @@ See `docs/IMPLEMENTATION_GAP_ASSESSMENT.md` for details.
 ## Phase gates
 
 ### Phase 1 — Architecture and contracts
-**Status: Foundation documented; detailed endpoint/screen contracts remain.**
+**Status: Route foundation implemented on `feature/platform-foundation`; tests added, CI verification pending.**
+- Added a shared route contract for user sections and admin sections, including explicit login/register/reset route modes.
+- Connected browser history/popstate to both application shells so section navigation updates the URL and direct route loads resolve to the intended section.
+- Added Vercel rewrites for direct user routes and `/admin/*` routes to the correct separate HTML entry point.
+- Added Node built-in route-contract tests for route coverage, unknown paths, auth modes, and separation between user/admin route maps.
+- This is routing foundation only: it does not replace server-side authorization, and unknown route handling in the app shell still needs browser-level validation.
 - Freeze route inventory for both applications.
 - Create a screen-to-component-to-API matrix including loading, empty, error, validation, disabled and success states.
 - Define common error envelope, pagination, currency/amount representation, timestamps and idempotency conventions.
