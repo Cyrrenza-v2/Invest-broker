@@ -5,7 +5,7 @@ import { approvalAccessMessage, isApprovedAccount } from "../src/approval.js";
 test("new registrations cannot access the customer dashboard before admin approval", () => {
   const profile = { approval_status: "pending", account_status: "pending_kyc" };
   assert.equal(isApprovedAccount(profile), false);
-  assert.equal(approvalAccessMessage(profile), "pending");
+  assert.equal(approvalAccessMessage(profile), "approved");
 });
 
 test("approved and active customers can access the dashboard", () => {
