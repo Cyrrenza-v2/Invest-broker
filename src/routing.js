@@ -83,5 +83,5 @@ export function isAdminPath(pathname = "/") {
 function normalizePath(pathname) {
   const path = String(pathname || "/").split("?")[0].split("#")[0];
   if (path === "/") return "/";
-  return path.replace(/\\/+$/, "") || "/";
+  return path.replace(/\/+$/, "") || "/";
 }
