@@ -132,7 +132,7 @@ function AdminApp(){
  const verifyEnrollment=async()=>{
   if(!db||!session||!enrollment?.id)return;
   const code=mfaCode.trim();
-  if(!/^\\d{6}$/.test(code)){setNotice("Enter the current six-digit code from the newly scanned authenticator entry.");return;}
+  if(!/^\d{6}$/.test(code)){setNotice("Enter the current six-digit code from the newly scanned authenticator entry.");return;}
   setBusy(true);setNotice("");
   try{
    const {error}=await db.auth.mfa.challengeAndVerify({factorId:enrollment.id,code});
