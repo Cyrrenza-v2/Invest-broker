@@ -85,6 +85,7 @@ Deno.serve(async req=>{
   let query=db.from(spec.table).select(spec.select).order("created_at",{ascending:false}).limit(limit);
   const userId=urlObj.searchParams.get("user_id");
   if(userId&&["investments","returns","deposits","withdrawals"].includes(route)) query=query.eq("user_id",userId);
+  if(route==="users") query=query.neq("id",control.primary_admin_user_id);
   const {data,error}=await query; if(error) throw error;
   return json(req,{data:data??[]});
  }catch(error){console.error("admin-api error",error);return json(req,{error:"Unable to retrieve requested admin data"},500);}
