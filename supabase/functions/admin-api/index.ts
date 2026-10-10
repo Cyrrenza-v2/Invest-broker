@@ -41,27 +41,14 @@ Deno.serve(async req=>{
       return json(req,{error:"Provide a valid user_id and approve/reject action"},400);
     }
     const reason=typeof payload?.reason==="string"?payload.reason.trim().slice(0,500):"";
-    const {data:target,error:targetError}=await db.from("profiles").select("id,approval_status,account_status,user_code").eq("id",userId).maybeSingle();
-    if(targetError) throw targetError;
-    if(!target) return json(req,{error:"Account application not found"},404);
-    if(target.approval_status!=="pending") return json(req,{error:"Only pending applications can be reviewed"},409);
-    const now=new Date().toISOString();
-    const nextStatus=action==="approve"?"approved":"rejected";
-    const nextAccountStatus=action==="approve"?"active":"restricted";
-    const {data:updated,error:updateError}=await db.from("profiles").update({
-      approval_status:nextStatus,account_status:nextAccountStatus,
-      approval_reviewed_by:user.id,approval_reviewed_at:now,approval_reason:reason||null,updated_at:now
-    }).eq("id",userId).eq("approval_status","pending")
-      .select("id,user_code,full_name,kyc_status,account_status,approval_status,approval_reviewed_at").maybeSingle();
-    if(updateError) throw updateError;
-    if(!updated) return json(req,{error:"This application was already reviewed. Refresh the queue."},409);
-    const {error:auditError}=await db.from("audit_logs").insert({
-      actor_id:user.id,actor_role:"admin",action:action==="approve"?"customer_account_approved":"customer_account_rejected",
-      entity_type:"customer_account",entity_id:userId,reason:reason||null,
-      before_state:{approval_status:"pending",account_status:target.account_status},
-      after_state:{approval_status:nextStatus,account_status:nextAccountStatus,reviewed_at:now}
+    const {data:updated,error:reviewError}=await db.rpc("review_customer_account",{
+      p_user_id:userId,p_action:action,p_actor_id:user.id,p_reason:reason||null
     });
-    if(auditError) throw auditError;
+    if(reviewError) {
+      const message=reviewError.message||"Account review failed";
+      const status=message.includes("not found")?404:message.includes("Only pending")?409:400;
+      return json(req,{error:message},status);
+    }
     return json(req,{data:updated},200);
   }
  const limit=Math.min(Math.max(Number(urlObj.searchParams.get("limit")??100),1),200);
