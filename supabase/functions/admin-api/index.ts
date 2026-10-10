@@ -5,18 +5,18 @@ const serviceKey=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const anonKey=Deno.env.get("SUPABASE_ANON_KEY")!;
 const db=createClient(url,serviceKey,{auth:{persistSession:false,autoRefreshToken:false}});
 const authClient=createClient(url,anonKey,{auth:{persistSession:false,autoRefreshToken:false}});
-const origins=new Set(["https://invest-broker.vercel.app","http://localhost:5173","http://127.0.0.1:5173"]);
+function isAllowedOrigin(origin: string) { try { const u = new URL(origin); if (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname) && u.port === "5173") return true; return u.protocol === "https:" && (u.hostname === "invest-broker.vercel.app" || (u.hostname.startsWith("invest-broker-") && u.hostname.endsWith(".vercel.app"))); } catch { return false; } }
 function json(req:Request,body:unknown,status=200){
  const origin=req.headers.get("origin")??"";
  const headers=new Headers({"content-type":"application/json","cache-control":"no-store","vary":"Origin"});
- if(origins.has(origin)){headers.set("access-control-allow-origin",origin);headers.set("access-control-allow-headers","authorization, apikey, content-type, x-client-info");headers.set("access-control-allow-methods","GET, POST, OPTIONS");}
+ if(isAllowedOrigin(origin)){headers.set("access-control-allow-origin",origin);headers.set("access-control-allow-headers","authorization, apikey, content-type, x-client-info");headers.set("access-control-allow-methods","GET, POST, OPTIONS");}
  return new Response(JSON.stringify(body),{status,headers});
 }
 Deno.serve(async req=>{
  if(req.method==="OPTIONS") return json(req,{});
  if(!["GET","POST"].includes(req.method)) return json(req,{error:"Method not allowed"},405);
  const origin=req.headers.get("origin")??"";
- if(origin&&!origins.has(origin)) return json(req,{error:"Origin not allowed"},403);
+ if(origin&&!isAllowedOrigin(origin)) return json(req,{error:"Origin not allowed"},403);
  const header=req.headers.get("authorization")??"";
  const token=header.startsWith("Bearer ")?header.slice(7):"";
  if(!token) return json(req,{error:"Authentication required"},401);
