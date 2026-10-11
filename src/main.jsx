@@ -106,7 +106,7 @@ function App() {
     } finally { setRefreshing(false); }
   };
 
-  useEffect(() => { if (session?.user?.id) { setApprovalStatus("checking"); loadData(); } else { setApprovalStatus("signed_out"); setData({profile:null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false}); } }, [session?.user?.id]);
+  useEffect(() => { if (session?.user?.id) { setApprovalStatus("checking"); loadData(); } else { setApprovalStatus("signed_out"); setData({profile:null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false}); } }, [session?.user?.id, session?.access_token]);
 
   useEffect(() => {
     if (!supabase || !session?.user?.id) return;
@@ -123,7 +123,7 @@ function App() {
     channel.subscribe();
     const fallback = window.setInterval(() => { if (!disposed && document.visibilityState === "visible") loadData(true); }, 15000);
     return () => { disposed = true; window.clearInterval(fallback); supabase.removeChannel(channel); };
-  }, [session?.user?.id]);
+  }, [session?.user?.id, session?.access_token]);
 
   const postedLedger = data.ledger.filter(entry => entry.status === "posted");
   const availableBalance = postedLedger.reduce((sum, entry) => {
