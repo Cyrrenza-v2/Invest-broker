@@ -5,6 +5,7 @@ import { AnalyzeBuildFailureDefinition } from "./functions/analyze_build_failure
 export default Manifest({
   name: "invest-broker-ai-workflow",
   description: "AI question answering and GitHub CI failure analysis for Invest-broker.",
+  icon: "https://a.slack-edge.com/80588/img/avatars-teams/ava_0001-34.png",
   functions: [AnswerQuestionDefinition, AnalyzeBuildFailureDefinition],
   botScopes: [],
 });
