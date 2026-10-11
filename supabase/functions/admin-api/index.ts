@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { adminAuthorizationFailure } from "./authorization.js";
 const url=Deno.env.get("SUPABASE_URL")!;
 const serviceKey=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const anonKey=Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -32,18 +33,14 @@ Deno.serve(async req=>{
  if(!token) return json(req,{error:"Authentication required"},401);
  const {data:{user},error:authError}=await authClient.auth.getUser(token);
  if(authError||!user) return json(req,{error:"Invalid or expired session"},401);
- if(user.app_metadata?.role!=="admin") return json(req,{error:"Sole administrator permission required"},403);
  const {data:claimsData,error:claimsError}=await authClient.auth.getClaims(token);
- if(claimsError||claimsData?.claims?.aal!=="aal2") return json(req,{error:"Verified MFA (AAL2) is required"},403);
- const bannedUntil=(user as {banned_until?:string}).banned_until;
- if(bannedUntil && Date.parse(bannedUntil)>Date.now()) return json(req,{error:"Administrator account is suspended"},403);
+ if(claimsError) return json(req,{error:"Unable to verify session assurance"},403);
  const {data:adminProfile,error:profileError}=await db.from("profiles").select("account_status,approval_status").eq("id",user.id).maybeSingle();
  if(profileError) return json(req,{error:"Unable to verify administrator account status"},500);
- if(!adminProfile || adminProfile.account_status!=="active" || adminProfile.approval_status!=="approved") return json(req,{error:"Active, approved administrator account required"},403);
  const {data:control,error:controlError}=await db.from("platform_control").select("primary_admin_user_id").eq("singleton",true).maybeSingle();
  if(controlError) return json(req,{error:"Unable to verify primary administrator configuration"},500);
- if(!control?.primary_admin_user_id) return json(req,{error:"The platform owner must assign the single primary administrator before admin operations can be used."},503);
- if(control.primary_admin_user_id!==user.id) return json(req,{error:"This account is not the assigned primary administrator."},403);
+ const authorizationFailure=adminAuthorizationFailure({user,claims:claimsData?.claims,profile:adminProfile,primaryAdminId:control?.primary_admin_user_id});
+ if(authorizationFailure) return json(req,{error:authorizationFailure.message},authorizationFailure.status);
  const urlObj=new URL(req.url); const route=urlObj.pathname.split("/").filter(Boolean).slice(-1)[0]??"dashboard";
  const allowedRoutes=new Set(["dashboard","wallets","users","investments","investment-plans","returns","deposits","withdrawals","compliance","treasury","audit-logs"]);
  if(!allowedRoutes.has(route)) return json(req,{error:"Route not found"},404);
