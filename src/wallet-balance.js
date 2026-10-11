@@ -4,11 +4,11 @@ export function getReconciledAvailableBalance(wallet) {
   return Number.isFinite(amount) ? amount : null;
 }
 
-export function displayAvailableBalance(value, currency = "NGN") {
+export function displayAvailableBalance(value, currency = "USD") {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return "Pending reconciliation";
   }
-  return new Intl.NumberFormat("en-NG", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency,
     maximumFractionDigits: 2
