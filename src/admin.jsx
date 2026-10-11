@@ -154,7 +154,7 @@ function AdminApp(){
   setRows(next);setLoading(false);
   if(failed.length)setNotice("Some records could not be loaded from the secured Admin API: "+failed.join(", "));
  };
- useEffect(()=>{if(session&&manager&&mfaVerified)loadData()},[session?.user?.id,manager,mfaVerified]);
+ useEffect(()=>{if(session&&manager&&mfaVerified)loadData()},[session?.user?.id,session?.access_token,manager,mfaVerified]);
  useEffect(()=>{
   if(!db||!session||!manager||!mfaVerified){setLiveStatus("offline");return;}
   let disposed=false;
