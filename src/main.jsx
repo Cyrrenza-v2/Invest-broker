@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { getAccountAccess } from "./approval.js";
-import { supabase, supabaseConfigReady } from "./supabase.js";
+import { supabase, supabaseConfigReady, supabasePublicKey } from "./supabase.js";
 import "./style.css";
 
 const API_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
@@ -35,7 +35,7 @@ function App() {
       const response = await fetch(`${API_URL}/functions/v1/user-api/me`, {
         method: "GET",
         headers: {
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          apikey: supabasePublicKey,
           Authorization: `Bearer ${activeSession.access_token}`,
           Accept: "application/json",
         },
