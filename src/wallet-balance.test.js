@@ -20,3 +20,7 @@ test("shows a clear status instead of fabricating a zero balance", () => {
   assert.equal(displayAvailableBalance(null), "Pending reconciliation");
   assert.match(displayAvailableBalance(1234.5), /1,234/);
 });
+
+test("formats customer available balances as US dollars by default", () => {
+  assert.match(displayAvailableBalance(1234.5), /^\$1,234\.5/);
+});
