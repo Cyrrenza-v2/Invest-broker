@@ -100,7 +100,7 @@ export default SlackFunction(AnalyzeBuildFailureDefinition, async ({ inputs, log
     let annotations: Array<Record<string, unknown>> = [];
     for (const job of failedJobs.slice(0, 5)) {
       if (typeof job.check_run_url !== "string") continue;
-      const checkRunId = String(job.id ?? "");
+      const checkRunId = String(job.check_run_url).split("/").pop() ?? "";
       if (!/^\d+$/.test(checkRunId)) continue;
       try {
         const annotationResponse = await fetch(
