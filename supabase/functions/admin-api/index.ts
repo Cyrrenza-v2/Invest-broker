@@ -35,12 +35,17 @@ Deno.serve(async req=>{
  if(user.app_metadata?.role!=="admin") return json(req,{error:"Sole administrator permission required"},403);
  const {data:claimsData,error:claimsError}=await authClient.auth.getClaims(token);
  if(claimsError||claimsData?.claims?.aal!=="aal2") return json(req,{error:"Verified MFA (AAL2) is required"},403);
+ const bannedUntil=(user as {banned_until?:string}).banned_until;
+ if(bannedUntil && Date.parse(bannedUntil)>Date.now()) return json(req,{error:"Administrator account is suspended"},403);
+ const {data:adminProfile,error:profileError}=await db.from("profiles").select("account_status,approval_status").eq("id",user.id).maybeSingle();
+ if(profileError) return json(req,{error:"Unable to verify administrator account status"},500);
+ if(!adminProfile || adminProfile.account_status!=="active" || adminProfile.approval_status!=="approved") return json(req,{error:"Active, approved administrator account required"},403);
  const {data:control,error:controlError}=await db.from("platform_control").select("primary_admin_user_id").eq("singleton",true).maybeSingle();
  if(controlError) return json(req,{error:"Unable to verify primary administrator configuration"},500);
  if(!control?.primary_admin_user_id) return json(req,{error:"The platform owner must assign the single primary administrator before admin operations can be used."},503);
  if(control.primary_admin_user_id!==user.id) return json(req,{error:"This account is not the assigned primary administrator."},403);
  const urlObj=new URL(req.url); const route=urlObj.pathname.split("/").filter(Boolean).slice(-1)[0]??"dashboard";
- const allowedRoutes=new Set(["dashboard","users","investments","investment-plans","returns","deposits","withdrawals","compliance","treasury","audit-logs"]);
+ const allowedRoutes=new Set(["dashboard","wallets","users","investments","investment-plans","returns","deposits","withdrawals","compliance","treasury","audit-logs"]);
  if(!allowedRoutes.has(route)) return json(req,{error:"Route not found"},404);
  if(req.method==="POST") {
   if(route!=="users") return json(req,{error:"Only account approval actions are enabled in this endpoint"},405);
@@ -71,6 +76,7 @@ Deno.serve(async req=>{
    return json(req,{data:{users:results[0].count??0,activeOrMaturedInvestments:results[1].count??0,pendingDeposits:results[2].count??0,pendingWithdrawals:results[3].count??0,openComplianceCases:results[4].count??0}});
   }
   const specs:Record<string,{table:string;select:string}> = {
+   wallets:{table:"wallets",select:"id,wallet_code,user_id,currency,status,created_at"},
    users:{table:"profiles",select:"id,user_code,full_name,phone,kyc_status,account_status,approval_status,approval_reviewed_by,approval_reviewed_at,approval_reason,created_at,updated_at"},
    investments:{table:"investments",select:"id,investment_code,user_id,plan_id,principal,currency,status,started_at,maturity_at,created_at"},
    "investment-plans":{table:"investment_plans",select:"id,name,description,currency,minimum_amount,maximum_amount,duration_days,return_rate,return_method,withdrawal_window_days,is_active,terms_version,created_at,updated_at"},
