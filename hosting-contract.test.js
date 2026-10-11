@@ -26,7 +26,17 @@ test("customer admin paths are redirected to the dedicated admin hostname", () =
   ));
   assert.ok(redirects.some(item => item.source === "/admin"));
   assert.ok(redirects.some(item => item.source === "/admin/:path*"));
+  assert.ok(redirects.some(item => item.source === "/admin.html"));
+  assert.ok(redirects.some(item => item.source === "/admin.webmanifest"));
   assert.ok(redirects.every(item => item.destination.startsWith("https://admin-invest-broker.vercel.app/")));
+});
+
+test("admin host redirects direct customer entry files back into the admin app", () => {
+  const redirects = config.redirects.filter(item => item.has?.some(condition =>
+    condition.type === "host" && condition.value === "admin-invest-broker.vercel.app"
+  ));
+  assert.ok(redirects.some(item => item.source === "/index.html" && item.destination === "/admin/dashboard"));
+  assert.ok(redirects.some(item => item.source === "/user.webmanifest" && item.destination === "/admin/dashboard"));
 });
 
 test("customer and admin PWAs have separate start routes and scopes", () => {
