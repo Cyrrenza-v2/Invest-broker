@@ -56,3 +56,19 @@ test("customer portal contains an explicit administrator-session rejection", () 
   assert.match(source, /roleIsAdmin\(session\.user\)/);
   assert.match(source, /Administrator accounts must use the dedicated admin portal/);
 });
+
+test("admin API requires role, MFA, active approved account, and primary-admin assignment", () => {
+  const source = readFileSync(new URL("./supabase/functions/admin-api/index.ts", import.meta.url), "utf8");
+  assert.match(source, /user\.app_metadata\?\.role\s*!==\s*["']admin["']/);
+  assert.match(source, /claims\?\.aal\s*!==\s*["']aal2["']/);
+  assert.match(source, /adminProfile\.account_status\s*!==\s*["']active["']/);
+  assert.match(source, /adminProfile\.approval_status\s*!==\s*["']approved["']/);
+  assert.match(source, /control\.primary_admin_user_id\s*!==\s*user\.id/);
+});
+
+test("Supabase config keeps gateway JWT verification enabled for protected functions", () => {
+  const config = readFileSync(new URL("./supabase/config.toml", import.meta.url), "utf8");
+  for (const name of ["admin-api", "admin-bootstrap", "user-api"]) {
+    assert.match(config, new RegExp("\\[functions\\." + name + "\\]\\s+verify_jwt = true"));
+  }
+});
