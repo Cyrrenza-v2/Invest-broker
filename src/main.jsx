@@ -77,6 +77,16 @@ function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!session?.user || !roleIsAdmin(session.user)) return;
+    void supabase?.auth.signOut();
+    setSession(null);
+    setApprovalStatus("signed_out");
+    setAuthMode("login");
+    setAuthOpen(true);
+    setNotice("Administrator accounts must use the dedicated admin portal.");
+  }, [session]);
+
   const loadData = async (quiet = false) => {
     if (!supabase || !session?.user?.id) return;
     if (quiet) setRefreshing(true);
