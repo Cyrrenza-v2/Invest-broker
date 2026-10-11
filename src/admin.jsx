@@ -164,7 +164,7 @@ function AdminApp(){
   channel.subscribe(status=>{if(disposed)return;if(status==="SUBSCRIBED")setLiveStatus("live");else if(["CHANNEL_ERROR","TIMED_OUT","CLOSED"].includes(status))setLiveStatus("reconnecting");});
   const fallback=window.setInterval(()=>{if(!disposed&&document.visibilityState==="visible")loadData(true);},10000);
   return()=>{disposed=true;window.clearInterval(fallback);db.removeChannel(channel);};
- },[session?.user?.id,manager,mfaVerified]);
+ },[session?.user?.id,session?.access_token,manager,mfaVerified]);
  const users=rows.profiles||[],investments=rows.investments||[],deposits=rows.deposits||[],withdrawals=rows.withdrawals||[],ledger=rows.ledger_entries||[];
  const totalInvested=investments.filter(x=>["active","matured","under_review"].includes(x.status)).reduce((a,x)=>a+Number(x.principal||0),0);
  const pendingWithdrawals=withdrawals.filter(x=>["pending","under_review","approved","processing"].includes(x.status));
