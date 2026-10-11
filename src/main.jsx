@@ -45,7 +45,8 @@ function App() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [authMode, setAuthMode] = useState("login");
-  const [busy, setBusy] = useState(false);\n  const [emailConfirmationRequired, setEmailConfirmationRequired] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [emailConfirmationRequired, setEmailConfirmationRequired] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState({ profile:null, wallet:null, plans:[], investments:[], ledger:[], deposits:[], withdrawals:[], bankAccounts:[], notifications:[], documents:[], messages:[], complaints:[], loading:false });
   const [complaint, setComplaint] = useState({category:"other",subject:"",description:""});
