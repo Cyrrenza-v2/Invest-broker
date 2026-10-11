@@ -2,32 +2,96 @@
   "rewrites": [
     {
       "source": "/admin",
-      "has": [{ "type": "host", "value": "admin-invest-broker.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "admin-invest-broker.vercel.app"
+        }
+      ],
       "destination": "/admin.html"
     },
     {
       "source": "/admin/:path*",
-      "has": [{ "type": "host", "value": "admin-invest-broker.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "admin-invest-broker.vercel.app"
+        }
+      ],
       "destination": "/admin.html"
     },
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "admin-invest-broker.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "admin-invest-broker.vercel.app"
+        }
+      ],
       "destination": "/admin.html"
     },
     {
       "source": "/admin",
-      "has": [{ "type": "host", "value": "invest-broker.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "invest-broker-uasianubong-2840.vercel.app"
+        }
+      ],
       "destination": "/index.html"
     },
     {
       "source": "/admin/:path*",
-      "has": [{ "type": "host", "value": "invest-broker.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "invest-broker-uasianubong-2840.vercel.app"
+        }
+      ],
       "destination": "/index.html"
     },
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "invest-broker.vercel.app" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "invest-broker-uasianubong-2840.vercel.app"
+        }
+      ],
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin",
+      "has": [
+        {
+          "type": "host",
+          "value": "invest-broker.vercel.app"
+        }
+      ],
+      "destination": "/index.html"
+    },
+    {
+      "source": "/admin/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "invest-broker.vercel.app"
+        }
+      ],
+      "destination": "/index.html"
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "invest-broker.vercel.app"
+        }
+      ],
+      "destination": "/index.html"
+    },
+    {
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ]
