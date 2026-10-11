@@ -14,7 +14,7 @@ import { approvalAccessMessage, isApprovedAccount } from "./approval.js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://rjgzvpkyccfpnpzlbcuc.supabase.co";
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { storageKey: "invest-broker-user-auth-v1", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { storageKey: "invest-broker-user-auth-v1", persistSession: false, autoRefreshToken: false, detectSessionInUrl: true } }) : null;
 const money = (n, currency = "NGN") => new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(n || 0));
 const date = value => value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value)) : "Not set";
 const roleIsAdmin = user => user?.app_metadata?.role === "admin";
@@ -71,7 +71,7 @@ function App() {
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({data}) => { setSession(data.session); setApprovalStatus(data.session ? "checking" : "signed_out"); if (!data.session && ["/","/dashboard","/login","/register"].includes(window.location.pathname)) { const route=resolveUserRoute(window.location.pathname); setAuthMode(route.authMode || "login"); setAuthOpen(true); } });
-    const {data: listener} = supabase.auth.onAuthStateChange((_event, next) => { setSession(next); setApprovalStatus(next ? "checking" : "signed_out"); });
+    const {data: listener} = supabase.auth.onAuthStateChange((event, next) => { setSession(next); setApprovalStatus(next ? "checking" : "signed_out"); if (event === "PASSWORD_RECOVERY") { setAuthMode("update-password"); setAuthOpen(true); setNotice("Choose a new password to finish recovering your account."); } });
     return () => listener.subscription.unsubscribe();
   }, []);
 
@@ -107,6 +107,23 @@ function App() {
   };
 
   useEffect(() => { if (session?.user?.id) { setApprovalStatus("checking"); loadData(); } else { setApprovalStatus("signed_out"); setData({profile:null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false}); } }, [session?.user?.id, session?.access_token]);
+
+  useEffect(() => {
+    if (!session?.expires_at || !supabase) return;
+    const checkExpiry = () => {
+      if (Date.now() >= Number(session.expires_at) * 1000) {
+        supabase.auth.signOut().finally(() => {
+          setSession(null);
+          setAuthMode("login");
+          setAuthOpen(true);
+          setNotice("Your session has expired. Please sign in again.");
+        });
+      }
+    };
+    const interval = window.setInterval(checkExpiry, 10000);
+    window.addEventListener("focus", checkExpiry);
+    return () => { window.clearInterval(interval); window.removeEventListener("focus", checkExpiry); };
+  }, [session?.expires_at]);
 
   useEffect(() => {
     if (!supabase || !session?.user?.id) return;
@@ -173,6 +190,16 @@ function App() {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
         if (resetError) throw resetError;
         setNotice("Password reset instructions have been sent if the email is registered.");
+      } else if (authMode === "update-password") {
+        if (password.length < 8) throw new Error("Use a password with at least 8 characters.");
+        const { error: updateError } = await supabase.auth.updateUser({ password });
+        if (updateError) throw updateError;
+        await supabase.auth.signOut();
+        setSession(null);
+        setPassword("");
+        setAuthMode("login");
+        setAuthOpen(true);
+        setNotice("Password updated. Sign in using your new password.");
       } else {
         const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
           email: normalizedEmail,
@@ -291,7 +318,7 @@ function App() {
         <footer className="footer"><span>© {new Date().getFullYear()} Invest Broker</span><span><ShieldCheck size={13}/> Private customer workspace</span><span>Financial actions require secure backend verification</span></footer>
       </div>
     </main>
-    {authOpen&&<div className="modal-backdrop" onClick={()=>setAuthOpen(false)}><div className="auth-modal" onClick={e=>e.stopPropagation()}><button className="modal-close icon-button" onClick={()=>setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>{authMode==="signup"?"Create your account":authMode==="reset"?"Reset password":"Welcome back"}</h2><p>{authMode==="signup"?"Register your personal customer account.":authMode==="reset"?"We’ll email you a secure password reset link.":"Sign in to access your private investment dashboard."}</p>{authMode==="signup"&&<><label htmlFor="fullName">Full name</label><input id="fullName" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your full name" autoComplete="name"/></>}<label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required/>{authMode!=="reset"&&<><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete={authMode==="signup"?"new-password":"current-password"} minLength={8} required/></>}{authMode==="login"&&<button className="auth-text-link" onClick={()=>setAuthMode("reset")}>Forgot password?</button>}{notice&&<div className="toast auth-notice" role="status">{notice}</div>}<button className="primary-button full-button" onClick={submitAuth} disabled={busy}>{busy?"Please wait…":authMode==="signup"?"Create account":authMode==="reset"?"Send reset link":"Login"} <ChevronRight size={16}/></button><div className="auth-mode-switch">{authMode==="signup"?"Already registered?":"New to Invest Broker?"} <button onClick={()=>{setAuthMode(authMode==="signup"?"login":"signup");setNotice("");}}>{authMode==="signup"?"Login":"Create account"}</button>{authMode==="reset"&&<button onClick={()=>setAuthMode("login")}>Back to login</button>}</div><div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
+    {authOpen&&<div className="modal-backdrop" onClick={()=>setAuthOpen(false)}><div className="auth-modal" onClick={e=>e.stopPropagation()}><button className="modal-close icon-button" onClick={()=>setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>{authMode==="signup"?"Create your account":authMode==="reset"?"Reset password":authMode==="update-password"?"Choose a new password":"Welcome back"}</h2><p>{authMode==="signup"?"Register your personal customer account.":authMode==="reset"?"We’ll email you a secure password reset link.":authMode==="update-password"?"Set a new password to secure your account.":"Sign in to access your private investment dashboard."}</p>{authMode==="signup"&&<><label htmlFor="fullName">Full name</label><input id="fullName" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your full name" autoComplete="name"/></>}<label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required/>{authMode!=="reset"&&<><label htmlFor="password">{authMode==="update-password"?"New password":"Password"}</label><input id="password" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete={authMode==="login"?"current-password":"new-password"} minLength={8} required/></>}{authMode==="login"&&<button className="auth-text-link" onClick={()=>setAuthMode("reset")}>Forgot password?</button>}{notice&&<div className="toast auth-notice" role="status">{notice}</div>}<button className="primary-button full-button" onClick={submitAuth} disabled={busy}>{busy?"Please wait…":authMode==="signup"?"Create account":authMode==="reset"?"Send reset link":authMode==="update-password"?"Update password":"Login"} <ChevronRight size={16}/></button><div className="auth-mode-switch">{authMode==="signup"?"Already registered?":authMode==="update-password"?"After updating, sign in again.":"New to Invest Broker?"} {authMode!=="update-password"&&<button onClick={()=>{setAuthMode(authMode==="signup"?"login":"signup");setNotice("");}}>{authMode==="signup"?"Login":"Create account"}</button>}{(authMode==="reset"||authMode==="update-password")&&<button onClick={()=>{setAuthMode("login");setPassword("");setNotice("");}}>Back to login</button>}</div><div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
   </div>;
 }
 
