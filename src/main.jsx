@@ -16,7 +16,7 @@ import { summarizeProjectedReturns } from "./projected-returns.js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://rjgzvpkyccfpnpzlbcuc.supabase.co";
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { storageKey: "invest-broker-user-auth-v1", persistSession: false, autoRefreshToken: false, detectSessionInUrl: true } }) : null;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { storageKey: "invest-broker-user-auth-v1", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
 const money = n => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(Number(n || 0));
 const date = value => value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value)) : "Not set";
 const roleIsAdmin = user => user?.app_metadata?.role === "admin";
