@@ -28,7 +28,8 @@ export function summarizeProjectedReturns(investments = []) {
   const calculated = eligible.filter(item => item.projection);
   const unsupportedCount = eligible.length - calculated.length;
   const currencies = new Set(calculated.map(item => item.projection.currency).filter(Boolean));
-  const singleCurrency = currencies.size === 1 ? [...currencies][0] : null;
+  const allCurrenciesKnown = calculated.every(item => Boolean(item.projection.currency));
+  const singleCurrency = allCurrenciesKnown && currencies.size === 1 ? [...currencies][0] : null;
 
   return {
     items: calculated,
@@ -37,6 +38,7 @@ export function summarizeProjectedReturns(investments = []) {
       ? Math.round((calculated.reduce((sum, item) => sum + item.projection.projectedProfit, 0) + Number.EPSILON) * 100) / 100
       : null,
     currency: singleCurrency,
-    mixedCurrencies: currencies.size > 1
+    mixedCurrencies: currencies.size > 1,
+    missingCurrency: calculated.some(item => !item.projection.currency)
   };
 }
