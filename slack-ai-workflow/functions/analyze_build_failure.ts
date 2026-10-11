@@ -35,7 +35,7 @@ export const AnalyzeBuildFailureDefinition = DefineFunction({
 const MAX_REPOSITORY_LENGTH = 200;
 const MAX_RUN_ID_LENGTH = 24;
 
-export default SlackFunction(AnalyzeBuildFailureDefinition, async ({ inputs, logger }) => {
+export default SlackFunction(AnalyzeBuildFailureDefinition, async ({ inputs }) => {
   const repository = (inputs.repository ?? "").trim();
   const runId = (inputs.run_id ?? "").trim();
 
@@ -73,7 +73,7 @@ export default SlackFunction(AnalyzeBuildFailureDefinition, async ({ inputs, log
       return { error: "That workflow run was not found or this app cannot access the repository. Check the repository name, run ID, and token permissions." };
     }
     if (!runResponse.ok || !jobsResponse.ok) {
-      logger.error(`GitHub API returned run=${runResponse.status}, jobs=${jobsResponse.status}.`);
+      console.error(`GitHub API returned run=${runResponse.status}, jobs=${jobsResponse.status}.`);
       return { error: "GitHub could not return this workflow run. Check token permissions and try again." };
     }
 
@@ -119,7 +119,7 @@ export default SlackFunction(AnalyzeBuildFailureDefinition, async ({ inputs, log
           }
         }
       } catch (error) {
-        logger.warn(`Could not fetch annotations for job ${checkRunId}: ${String(error)}`);
+        console.warn(`Could not fetch annotations for job ${checkRunId}: ${String(error)}`);
       }
     }
 
@@ -139,7 +139,7 @@ export default SlackFunction(AnalyzeBuildFailureDefinition, async ({ inputs, log
 
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) {
-      logger.error("OPENAI_API_KEY is not configured in the Slack app secret store.");
+      console.error("OPENAI_API_KEY is not configured in the Slack app secret store.");
       return { error: "AI is not configured yet. Please contact the workspace administrator." };
     }
 
@@ -168,7 +168,7 @@ export default SlackFunction(AnalyzeBuildFailureDefinition, async ({ inputs, log
     });
 
     if (!aiResponse.ok) {
-      logger.error(`OpenAI request failed with HTTP ${aiResponse.status}.`);
+      console.error(`OpenAI request failed with HTTP ${aiResponse.status}.`);
       return { error: "The AI service could not analyze this build. Please try again later." };
     }
     const payload = await aiResponse.json();
@@ -178,7 +178,7 @@ export default SlackFunction(AnalyzeBuildFailureDefinition, async ({ inputs, log
     }
     return { outputs: { summary: summary.trim() } };
   } catch (error) {
-    logger.error(`Build analysis failed: ${String(error)}`);
+    console.error(`Build analysis failed: ${String(error)}`);
     return { error: "Build analysis encountered an error. Please check the repository/run ID and try again." };
   }
 });
