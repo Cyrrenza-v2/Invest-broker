@@ -1,42 +1,48 @@
 # Invest-broker — Slack AI Workflow Integration (Phase 1)
 
-This folder is an isolated Slack-hosted workflow app scaffold. It does not alter the existing Invest-broker application or enable financial actions.
+Phase 1 provides **two independent Slack Workflow Builder steps**:
 
-## Phase 1 default workflow
+1. **Answer with AI** — answer a question using optional user-supplied context.
+2. **Analyze GitHub Build Failure** — retrieve a GitHub Actions run and its jobs, then summarize likely causes and next debugging steps with AI.
 
-**Answer a question with AI.** A Workflow Builder step accepts a question and optional context and returns a concise answer. The workflow does not read channel history or post messages automatically; users explicitly supply the context.
+The static preview is in `web/index.html`. It is a UI preview only and does not call the AI service from the browser.
 
 ## Requirements
 
-- Slack CLI and a Slack workspace that supports custom workflow steps. Slack documents that custom workflow steps require a paid plan or a developer sandbox.
+- Slack CLI and a workspace/plan that supports custom workflow steps. Slack documents that custom workflow steps cannot be developed on the Free plan.
 - Deno / Slack CLI project support.
-- An OpenAI API key stored as a Slack app secret, never committed to Git.
+- `OPENAI_API_KEY` stored as a Slack app secret.
+- For GitHub Actions failure analysis, optionally store `GITHUB_TOKEN` as a Slack app secret. A token is recommended for private repositories and API rate limits; never paste tokens into workflow inputs.
 
-## Setup
+## Setup and deploy to Slack
 
 1. Install and authenticate the Slack CLI: `slack login`.
 2. From this directory, run `slack run` to validate the app in a development workspace.
-3. Add the provider key to the Slack app's secret store using the Slack CLI: `slack secrets add OPENAI_API_KEY <your-key>`.
-4. Deploy with `slack deploy`.
-5. In Slack Workflow Builder, add the custom step **Answer with AI** and map the question and optional context inputs.
-6. Test with non-sensitive text before enabling it for a team.
+3. Configure the secrets in the Slack app secret store:
+   - `slack secrets add OPENAI_API_KEY <your-key>`
+   - Optional: `slack secrets add GITHUB_TOKEN <your-token>`
+4. Run `slack deploy`.
+5. In Workflow Builder, add either **Answer with AI** or **Analyze GitHub Build Failure** and map the inputs.
 
-> Do not paste API keys into source files, workflow inputs, issues, or chat. The key is only read server-side by the function.
+## GitHub build analysis inputs
 
-## Files
+- `repository`: `owner/repo`, for example `Cyrrenza-v2/Invest-broker`.
+- `run_id`: numeric GitHub Actions workflow run ID from the failed run URL.
 
-- `manifest.ts`: declares the custom workflow function.
-- `functions/answer_question.ts`: validates inputs, calls the OpenAI API, and returns the answer.
-- `deno.json`: pins the Slack SDK import.
+The function fetches the run metadata and jobs from GitHub's REST API. It only reads build information; it does not re-run workflows, change source code, or push commits.
 
-## Security and behavior
+## Security
 
-- Input length is bounded before sending to the model.
-- Provider credentials are read from the runtime secret store.
-- The function returns a generic failure message to the workflow while logging diagnostic details server-side.
-- The first phase does not request Slack message-history scopes, access investments, modify balances, execute trades, or perform deposits/withdrawals.
-- Treat workflow inputs as potentially sensitive; only provide information permitted by your workspace policies.
+- API keys are read only from the runtime secret store.
+- Inputs have length checks; answer length is bounded.
+- No Slack message-history scopes are requested.
+- No investment records, balances, deposits, withdrawals, or trading actions are accessed.
+- Do not send confidential logs or customer data unless approved by your organization.
+
+## Web preview
+
+The web preview is a static product preview and does not embed credentials or make API calls. GitHub Pages deployment uses the repository's GitHub Actions workflow and requires Pages to be enabled with **Settings → Pages → Source: GitHub Actions**.
 
 ## Verification status
 
-This is a repository scaffold. It is not deployed to a Slack workspace yet. Deployment requires an authorized Slack CLI session and the secret configured in that workspace.
+Source files are committed on a feature branch and proposed in a draft PR. Slack deployment requires an authorized Slack CLI session and configured secrets. The static preview becomes public only after the PR is merged, Pages is enabled, and the GitHub Pages workflow succeeds.
