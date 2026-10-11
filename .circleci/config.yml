@@ -1,0 +1,48 @@
+version: 2.1
+
+jobs:
+  test_and_build:
+    docker:
+      - image: cimg/node:22.0
+    working_directory: ~/project
+    steps:
+      # CircleCI's SSH checkout key was empty. This public repository is cloned
+      # over HTTPS, and branches without the app are skipped in favor of the app branch.
+      - run:
+          name: Checkout application source over HTTPS
+          command: |
+            set -eu
+            branch="${CIRCLE_BRANCH:-feature/platform-foundation}"
+            source_dir="/tmp/invest-broker-source"
+            rm -rf "$source_dir"
+            if ! git clone --depth 1 --branch "$branch" https://github.com/Cyrrenza-v2/Invest-broker.git "$source_dir" 2>/dev/null || [ ! -f "$source_dir/package.json" ]; then
+              echo "Branch '$branch' does not contain the app package.json; using feature/platform-foundation."
+              rm -rf "$source_dir"
+              branch="feature/platform-foundation"
+              git clone --depth 1 --branch "$branch" https://github.com/Cyrrenza-v2/Invest-broker.git "$source_dir"
+            fi
+            cp -a "$source_dir/." .
+            rm -rf "$source_dir"
+      - run:
+          name: Install dependencies
+          command: npm install
+      - run:
+          name: Run tests
+          command: npm test
+      - run:
+          name: Build web app
+          command: npm run build
+      - run:
+          name: Verify customer and admin installable app output
+          command: |
+            test -s dist/index.html
+            test -s dist/admin.html
+            test -s dist/user.webmanifest
+            test -s dist/admin.webmanifest
+            test -s dist/sw.js
+            test -s dist/icon.svg
+
+workflows:
+  invest_broker_ci:
+    jobs:
+      - test_and_build
