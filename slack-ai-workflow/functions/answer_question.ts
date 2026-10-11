@@ -36,7 +36,7 @@ const MAX_QUESTION_LENGTH = 4_000;
 const MAX_CONTEXT_LENGTH = 8_000;
 const MAX_ANSWER_TOKENS = 700;
 
-export default SlackFunction(AnswerQuestionDefinition, async ({ inputs, logger }) => {
+export default SlackFunction(AnswerQuestionDefinition, async ({ inputs }) => {
   const question = (inputs.question ?? "").trim();
   const context = (inputs.context ?? "").trim();
 
@@ -49,7 +49,7 @@ export default SlackFunction(AnswerQuestionDefinition, async ({ inputs, logger }
 
   const apiKey = Deno.env.get("OPENAI_API_KEY");
   if (!apiKey) {
-    logger.error("OPENAI_API_KEY is not configured in the Slack app secret store.");
+    console.error("OPENAI_API_KEY is not configured in the Slack app secret store.");
     return { error: "AI is not configured yet. Please contact the workspace administrator." };
   }
 
@@ -81,20 +81,20 @@ export default SlackFunction(AnswerQuestionDefinition, async ({ inputs, logger }
     });
 
     if (!response.ok) {
-      logger.error(`OpenAI request failed with HTTP ${response.status}.`);
+      console.error(`OpenAI request failed with HTTP ${response.status}.`);
       return { error: "The AI service could not complete this request. Please try again later." };
     }
 
     const payload = await response.json();
     const answer = payload?.choices?.[0]?.message?.content;
     if (typeof answer !== "string" || !answer.trim()) {
-      logger.error("OpenAI response did not contain a usable answer.");
+      console.error("OpenAI response did not contain a usable answer.");
       return { error: "The AI service returned an empty answer. Please try again." };
     }
 
     return { outputs: { answer: answer.trim() } };
   } catch (error) {
-    logger.error(`AI workflow failed: ${String(error)}`);
+    console.error(`AI workflow failed: ${String(error)}`);
     return { error: "The AI workflow encountered an error. Please try again later." };
   }
 });
