@@ -126,3 +126,12 @@ test("platform ownership control remains inaccessible to browser database roles"
   const migration = readFileSync(new URL("./supabase/migrations/20261011221200_platform_control_deny_client_access.sql", import.meta.url), "utf8");
   assert.match(migration, /for all\s+to anon, authenticated\s+using \(false\)\s+with check \(false\)/i);
 });
+
+test("ledger posting rejects partially posted or already-posted lines", () => {
+  const migration = readFileSync(new URL("./supabase/migrations/20261011222000_ledger_posting_requires_all_pending_lines.sql", import.meta.url), "utf8");
+  assert.match(migration, /status\s*<>\s*'pending'\s+or\s+posted_at\s+is\s+not\s+null/i);
+  assert.match(migration, /A ledger transaction requires at least two entries/);
+  assert.match(migration, /Ledger transaction is not balanced by currency/);
+  assert.match(migration, /group by currency[\s\S]*?sum\(debit_amount\)\s*<>\s*sum\(credit_amount\)/i);
+  assert.match(migration, /grant execute on function public\.post_ledger_transaction\(uuid\) to service_role/i);
+});
