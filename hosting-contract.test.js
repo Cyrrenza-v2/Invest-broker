@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { adminAuthorizationFailure } from "./supabase/functions/admin-api/authorization.js";
 
 const config = JSON.parse(readFileSync(new URL("./vercel.json", import.meta.url), "utf8"));
 const userManifest = JSON.parse(readFileSync(new URL("./public/user.webmanifest", import.meta.url), "utf8"));
@@ -57,13 +58,61 @@ test("customer portal contains an explicit administrator-session rejection", () 
   assert.match(source, /Administrator accounts must use the dedicated admin portal/);
 });
 
-test("admin API requires role, MFA, active approved account, and primary-admin assignment", () => {
+test("admin authorization accepts only the active approved primary admin with MFA", () => {
+  const user = { id: "primary", app_metadata: { role: "admin" } };
+  const claims = { aal: "aal2" };
+  const profile = { account_status: "active", approval_status: "approved" };
+  assert.equal(adminAuthorizationFailure({ user, claims, profile, primaryAdminId: "primary" }), null);
+});
+
+test("admin authorization denies missing or stale sessions", () => {
+  assert.equal(adminAuthorizationFailure({ user: null, claims: null, profile: null, primaryAdminId: null })?.status, 401);
+});
+
+test("admin authorization denies customer or manager roles", () => {
+  const claims = { aal: "aal2" };
+  const profile = { account_status: "active", approval_status: "approved" };
+  for (const role of ["customer", "manager", undefined]) {
+    const user = { id: "primary", app_metadata: role ? { role } : {} };
+    assert.equal(adminAuthorizationFailure({ user, claims, profile, primaryAdminId: "primary" })?.status, 403);
+  }
+});
+
+test("admin authorization requires MFA assurance level AAL2", () => {
+  const user = { id: "primary", app_metadata: { role: "admin" } };
+  const profile = { account_status: "active", approval_status: "approved" };
+  for (const aal of ["aal1", undefined]) {
+    assert.equal(adminAuthorizationFailure({ user, claims: { aal }, profile, primaryAdminId: "primary" })?.status, 403);
+  }
+});
+
+test("admin authorization denies suspended, restricted, or unapproved accounts", () => {
+  const now = Date.parse("2026-10-11T22:00:00Z");
+  const claims = { aal: "aal2" };
+  const profile = { account_status: "active", approval_status: "approved" };
+  const suspended = { id: "primary", app_metadata: { role: "admin" }, banned_until: "2026-10-11T23:00:00Z" };
+  assert.equal(adminAuthorizationFailure({ user: suspended, claims, profile, primaryAdminId: "primary", now })?.status, 403);
+  for (const badProfile of [
+    { account_status: "restricted", approval_status: "approved" },
+    { account_status: "active", approval_status: "pending" },
+    null
+  ]) {
+    assert.equal(adminAuthorizationFailure({ user: { id: "primary", app_metadata: { role: "admin" } }, claims, profile: badProfile, primaryAdminId: "primary", now })?.status, 403);
+  }
+});
+
+test("admin authorization denies non-primary admins and missing owner assignment", () => {
+  const user = { id: "other-admin", app_metadata: { role: "admin" } };
+  const claims = { aal: "aal2" };
+  const profile = { account_status: "active", approval_status: "approved" };
+  assert.equal(adminAuthorizationFailure({ user, claims, profile, primaryAdminId: "primary" })?.status, 403);
+  assert.equal(adminAuthorizationFailure({ user, claims, profile, primaryAdminId: null })?.status, 503);
+});
+
+test("admin API delegates access decisions to the tested authorization helper", () => {
   const source = readFileSync(new URL("./supabase/functions/admin-api/index.ts", import.meta.url), "utf8");
-  assert.match(source, /user\.app_metadata\?\.role\s*!==\s*["']admin["']/);
-  assert.match(source, /claims\?\.aal\s*!==\s*["']aal2["']/);
-  assert.match(source, /adminProfile\.account_status\s*!==\s*["']active["']/);
-  assert.match(source, /adminProfile\.approval_status\s*!==\s*["']approved["']/);
-  assert.match(source, /control\.primary_admin_user_id\s*!==\s*user\.id/);
+  assert.match(source, /import \{ adminAuthorizationFailure \} from "\.\/authorization\.js"/);
+  assert.match(source, /adminAuthorizationFailure\(\{user,claims:claimsData\?\.claims,profile:adminProfile,primaryAdminId:control\?\.primary_admin_user_id\}\)/);
 });
 
 test("Supabase config keeps gateway JWT verification enabled for protected functions", () => {
