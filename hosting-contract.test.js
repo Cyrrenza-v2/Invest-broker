@@ -72,3 +72,8 @@ test("Supabase config keeps gateway JWT verification enabled for protected funct
     assert.match(config, new RegExp("\\[functions\\." + name + "\\]\\s+verify_jwt = true"));
   }
 });
+
+test("platform ownership control remains inaccessible to browser database roles", () => {
+  const migration = readFileSync(new URL("./supabase/migrations/20261011221200_platform_control_deny_client_access.sql", import.meta.url), "utf8");
+  assert.match(migration, /for all\s+to anon, authenticated\s+using \(false\)\s+with check \(false\)/i);
+});
