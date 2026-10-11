@@ -14,7 +14,7 @@ import { approvalAccessMessage, isApprovedAccount } from "./approval.js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "https://rjgzvpkyccfpnpzlbcuc.supabase.co";
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { storageKey: "invest-broker-user-auth-v1", persistSession: false, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, { auth: { storageKey: "invest-broker-user-auth-v1", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
 const money = (n, currency = "NGN") => new Intl.NumberFormat("en-NG", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(n || 0));
 const date = value => value ? new Intl.DateTimeFormat("en-NG", { dateStyle: "medium" }).format(new Date(value)) : "Not set";
 const roleIsAdmin = user => user?.app_metadata?.role === "admin";
@@ -46,6 +46,7 @@ function App() {
   const [fullName, setFullName] = useState("");
   const [authMode, setAuthMode] = useState("login");
   const [busy, setBusy] = useState(false);
+  const [emailConfirmationRequired, setEmailConfirmationRequired] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState({ profile:null, wallet:null, plans:[], investments:[], ledger:[], deposits:[], withdrawals:[], bankAccounts:[], notifications:[], documents:[], messages:[], complaints:[], loading:false });
   const [complaint, setComplaint] = useState({category:"other",subject:"",description:""});
@@ -126,61 +127,104 @@ function App() {
 
   async function submitAuth() {
     if (!supabase) { setNotice("The Supabase publishable key is not configured in this deployment."); return; }
-    if (!email.trim()) { setNotice("Enter your email address first."); return; }
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) { setNotice("Enter your email address first."); return; }
     setBusy(true);
-    let error = null;
-    if (authMode === "signup") {
-      if (!fullName.trim()) { setBusy(false); setNotice("Enter your full name."); return; }
-      if (password.length < 8) { setBusy(false); setNotice("Use a password with at least 8 characters."); return; }
-      const result = await supabase.auth.signUp({email:email.trim(),password,options:{data:{full_name:fullName.trim()},emailRedirectTo:window.location.origin}});
-      error = result.error;
-      if (!error) {
+    setNotice("");
+    setEmailConfirmationRequired(false);
+    try {
+      if (authMode === "signup") {
+        if (!fullName.trim()) throw new Error("Enter your full name.");
+        if (password.length < 8) throw new Error("Use a password with at least 8 characters.");
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: { data: { full_name: fullName.trim() }, emailRedirectTo: window.location.origin }
+        });
+        if (signUpError) throw signUpError;
         setFullName("");
         setPassword("");
         setRegistrationPending(true);
-        setApprovalStatus(result.data.session ? "checking" : "pending");
-        if (result.data.session) setSession(result.data.session);
+        setApprovalStatus(signUpData.session ? "checking" : "pending");
+        if (signUpData.session) setSession(signUpData.session);
         setAuthOpen(false);
         const path = getUserPath("Overview");
         if (window.location.pathname !== path) window.history.pushState({}, "", path);
         setSection("Overview");
-        setNotice("Registration received. Your account is waiting for administrator approval.");
-      }
-    } else if (authMode === "reset") {
-      const result = await supabase.auth.resetPasswordForEmail(email.trim(),{redirectTo:window.location.origin});
-      error = result.error;
-      if (!error) setNotice("Password reset instructions have been sent if the email is registered.");
-    } else {
-      const result = await supabase.auth.signInWithPassword({email:email.trim(),password});
-      error = result.error;
-      if (!error) {
-        const profile = await callUserApi(result.data.session, "me");
+        setNotice(signUpData.session
+          ? "Registration received. Your account is waiting for administrator approval."
+          : "Registration received. If email confirmation is enabled, confirm your email first. Administrator approval is also required before account access.");
+      } else if (authMode === "reset") {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
+        if (resetError) throw resetError;
+        setNotice("Password reset instructions have been sent if the email is registered.");
+      } else {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password
+        });
+        if (signInError) throw signInError;
+        if (!signInData.session) throw new Error("Sign-in did not return a valid session. Please try again.");
+        const profile = await callUserApi(signInData.session, "me");
         if (!isApprovedAccount(profile)) {
           await supabase.auth.signOut();
           setSession(null);
-          const status=approvalAccessMessage(profile);
+          const status = approvalAccessMessage(profile);
           setApprovalStatus(status);
           setPassword("");
           setNotice(status === "rejected"
             ? "This account application was rejected. Contact the platform administrator."
             : status === "restricted"
-              ? "This account is restricted. Contact the platform administrator."
-              : "Your account is awaiting administrator approval. You can sign in after it is approved.");
+              ? "This account is approved but not active. Contact the platform administrator."
+              : "Your account is awaiting administrator approval. You can sign in again after it is approved.");
         } else {
-          setSession(result.data.session);
+          setSession(signInData.session);
           setApprovalStatus("approved");
           setAuthOpen(false);
           setPassword("");
-          setNotice("Signed in successfully. Welcome to your dashboard.");
+          setNotice("Sign-in successful. The backend confirmed your account is approved and active.");
           const path = getUserPath("Overview");
           if (window.location.pathname !== path) window.history.pushState({}, "", path);
           setSection("Overview");
         }
       }
+    } catch (authError) {
+      const message = String(authError?.message || "Unable to sign in. Please try again.");
+      if (/email not confirmed/i.test(message)) {
+        setEmailConfirmationRequired(true);
+        setNotice("Your email address has not been confirmed yet. Confirm it using the verification link before signing in.");
+      } else if (/failed to fetch|networkerror|load failed/i.test(message)) {
+        setNotice("We could not contact the account-verification service. No dashboard access was granted. Check your connection and try again.");
+      } else {
+        setNotice(message);
+      }
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
-    if (error) setNotice(error.message);
   }
+
+  async function resendConfirmation() {
+    if (!supabase || !email.trim()) {
+      setNotice("Enter the email address you used to register first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim().toLowerCase(),
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (resendError) throw resendError;
+      setNotice("If this account can receive a verification link, Supabase has sent one to the address entered. Check your inbox and spam folder.");
+      setEmailConfirmationRequired(false);
+    } catch (resendError) {
+      setNotice(String(resendError?.message || "Unable to resend the verification email right now."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function signOut() { if (supabase) await supabase.auth.signOut(); const path = getUserPath("Overview"); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSession(null); setApprovalStatus("signed_out"); setRegistrationPending(false); setSection("Overview"); setNotice("You are signed out."); }
   function go(name) { const path = getUserPath(name); if (window.location.pathname !== path) window.history.pushState({}, "", path); setSection(name); setMobileNav(false); setAuthOpen(false); setNotice(""); }
   function disabledAction(action) { setNotice(action + " is not enabled yet. It will remain disabled until the secure server-side workflow and authorized payment provider are verified."); }
@@ -255,7 +299,7 @@ function App() {
         <footer className="footer"><span>© {new Date().getFullYear()} Invest Broker</span><span><ShieldCheck size={13}/> Private customer workspace</span><span>Financial actions require secure backend verification</span></footer>
       </div>
     </main>
-    {authOpen&&<div className="modal-backdrop" onClick={()=>setAuthOpen(false)}><div className="auth-modal" onClick={e=>e.stopPropagation()}><button className="modal-close icon-button" onClick={()=>setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>{authMode==="signup"?"Create your account":authMode==="reset"?"Reset password":"Welcome back"}</h2><p>{authMode==="signup"?"Register your personal customer account.":authMode==="reset"?"We’ll email you a secure password reset link.":"Sign in to access your private investment dashboard."}</p>{authMode==="signup"&&<><label htmlFor="fullName">Full name</label><input id="fullName" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your full name" autoComplete="name"/></>}<label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required/>{authMode!=="reset"&&<><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete={authMode==="signup"?"new-password":"current-password"} minLength={8} required/></>}{authMode==="login"&&<button className="auth-text-link" onClick={()=>setAuthMode("reset")}>Forgot password?</button>}<button className="primary-button full-button" onClick={submitAuth} disabled={busy}>{busy?"Please wait…":authMode==="signup"?"Create account":authMode==="reset"?"Send reset link":"Login"} <ChevronRight size={16}/></button><div className="auth-mode-switch">{authMode==="signup"?"Already registered?":"New to Invest Broker?"} <button onClick={()=>{setAuthMode(authMode==="signup"?"login":"signup");setNotice("");}}>{authMode==="signup"?"Login":"Create account"}</button>{authMode==="reset"&&<button onClick={()=>setAuthMode("login")}>Back to login</button>}</div><div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
+    {authOpen&&<div className="modal-backdrop" onClick={()=>setAuthOpen(false)}><div className="auth-modal" onClick={e=>e.stopPropagation()}><button className="modal-close icon-button" onClick={()=>setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>{authMode==="signup"?"Create your account":authMode==="reset"?"Reset password":"Welcome back"}</h2><p>{authMode==="signup"?"Register your personal customer account.":authMode==="reset"?"We’ll email you a secure password reset link.":"Sign in to access your private investment dashboard."}</p>{authMode==="signup"&&<><label htmlFor="fullName">Full name</label><input id="fullName" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your full name" autoComplete="name"/></>}<label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required/>{authMode!=="reset"&&<><label htmlFor="password">Password</label><input id="password" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete={authMode==="signup"?"new-password":"current-password"} minLength={8} required/></>}{authMode==="login"&&<button className="auth-text-link" onClick={()=>setAuthMode("reset")}>Forgot password?</button>}{notice&&<div className="toast auth-notice" role="status">{notice}</div>}{emailConfirmationRequired&&authMode==="login"&&<button className="auth-text-link" onClick={resendConfirmation} disabled={busy}>Resend verification email</button>}<button className="primary-button full-button" onClick={submitAuth} disabled={busy}>{busy?"Please wait…":authMode==="signup"?"Create account":authMode==="reset"?"Send reset link":"Login"} <ChevronRight size={16}/></button><div className="auth-mode-switch">{authMode==="signup"?"Already registered?":"New to Invest Broker?"} <button onClick={()=>{setAuthMode(authMode==="signup"?"login":"signup");setNotice("");}}>{authMode==="signup"?"Login":"Create account"}</button>{authMode==="reset"&&<button onClick={()=>setAuthMode("login")}>Back to login</button>}</div><div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
   </div>;
 }
 
