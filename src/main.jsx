@@ -108,6 +108,23 @@ function App() {
 
   useEffect(() => { if (session?.user?.id) { setApprovalStatus("checking"); loadData(); } else { setApprovalStatus("signed_out"); setData({profile:null,wallet:null,plans:[],investments:[],ledger:[],deposits:[],withdrawals:[],bankAccounts:[],notifications:[],documents:[],messages:[],complaints:[],loading:false}); } }, [session?.user?.id]);
 
+  useEffect(() => {
+    if (!supabase || !session?.user?.id) return;
+    let disposed = false;
+    const userId = session.user.id;
+    const channel = supabase.channel("invest-broker-customer-live-phase2")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${userId}` }, () => { if (!disposed) loadData(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "investments", filter: `user_id=eq.${userId}` }, () => { if (!disposed) loadData(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "ledger_entries", filter: `user_id=eq.${userId}` }, () => { if (!disposed) loadData(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "deposits", filter: `user_id=eq.${userId}` }, () => { if (!disposed) loadData(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "withdrawals", filter: `user_id=eq.${userId}` }, () => { if (!disposed) loadData(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "support_messages", filter: `user_id=eq.${userId}` }, () => { if (!disposed) loadData(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "investment_plans" }, () => { if (!disposed) loadData(true); });
+    channel.subscribe();
+    const fallback = window.setInterval(() => { if (!disposed && document.visibilityState === "visible") loadData(true); }, 15000);
+    return () => { disposed = true; window.clearInterval(fallback); supabase.removeChannel(channel); };
+  }, [session?.user?.id]);
+
   const postedLedger = data.ledger.filter(entry => entry.status === "posted");
   const availableBalance = postedLedger.reduce((sum, entry) => {
     const amount = Number(entry.amount || 0);
