@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install --no-audit --no-fund --legacy-peer-deps
+        run: npm install --no-audit --no-fund
       - name: Build existing frontend
         run: npm run build
       - name: Test Worker, SQLite persistence, idempotency, and eviction recovery
@@ -45,7 +45,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install dependencies
-        run: npm install --no-audit --no-fund --legacy-peer-deps
+        run: npm install --no-audit --no-fund
       - name: Deploy test-only Worker when Cloudflare secrets are configured
         id: deploy
         env:
