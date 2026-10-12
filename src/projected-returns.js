@@ -9,9 +9,12 @@ export function getProjectedReturn(investment) {
   if (!plan || plan.return_method !== "fixed") return null;
   if (plan.return_rate === null || plan.return_rate === undefined || plan.return_rate === "") return null;
   if (!Number.isFinite(rate) || rate < 0) return null;
+  const currency = investment.currency || plan.currency;
+  // Do not display a monetary estimate unless its currency is explicitly known.
+  if (typeof currency !== "string" || !currency.trim()) return null;
 
   return {
-    currency: investment.currency || plan.currency || null,
+    currency,
     ratePercent: rate,
     projectedProfit: Math.round((principal * rate / 100 + Number.EPSILON) * 100) / 100,
     projectedTotal: Math.round((principal + principal * rate / 100 + Number.EPSILON) * 100) / 100,
