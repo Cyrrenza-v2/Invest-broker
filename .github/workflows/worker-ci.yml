@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/cloudflare-durable-object-api
+      - feature/separate-portals-pwa
   pull_request:
   workflow_dispatch:
 
@@ -24,8 +25,10 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund --legacy-peer-deps
-      - name: Build existing frontend
+      - name: Build customer portal
         run: npm run build
+      - name: Build admin portal
+        run: VITE_APP_ROLE=admin npm run build
       - name: Test Worker, SQLite persistence, idempotency, and eviction recovery
         run: npm run test:worker
       - name: Validate Wrangler configuration
