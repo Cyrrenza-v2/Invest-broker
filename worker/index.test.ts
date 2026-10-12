@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { env } from "cloudflare:workers";
-import { SELF, evictDurableObject } from "cloudflare:test";
+import { SELF, abortAllDurableObjects } from "cloudflare:test";
 
 const TOKEN = "unit-test-only-token";
 const headers = {
@@ -81,13 +81,12 @@ describe("Invest Broker Worker API", () => {
     expect((await summary.json() as any).totalOperations).toBe(1);
   });
 
-  it("preserves SQLite records after the Durable Object instance is evicted and restarted", async () => {
+  it("preserves SQLite records after a forced Durable Object restart", async () => {
     const body = operation("restart-test", "restart-ref-001");
     const created = await postOperation(body);
     expect(created.status).toBe(201);
 
-    const stub = env.LEDGER.getByName("restart-test");
-    await evictDurableObject(stub);
+    await abortAllDurableObjects();
 
     const read = await SELF.fetch(
       "https://invest-broker.test/api/v1/operations/restart-ref-001?accountId=restart-test",
