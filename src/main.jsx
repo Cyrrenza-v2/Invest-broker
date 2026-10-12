@@ -8,6 +8,7 @@ import {
   ShieldCheck, TrendingUp, UserRound, Wallet, X, Landmark, CalendarDays,
   RefreshCw, AlertCircle
 } from "lucide-react";
+import { Analytics } from "@vercel/analytics/react";
 import "./style.css";
 import { getUserPath, resolveUserRoute } from "./routing.js";
 import { getReconciledAvailableBalance, displayAvailableBalance } from "./wallet-balance.js";
@@ -400,4 +401,4 @@ function Security({session,disabledAction}) { return <><Panel title="Account sec
 function Info({label,value}) { return <div className="info-cell"><span>{label}</span><b>{value}</b></div>; }
 function SecurityRow({icon:Icon,title,detail,status}) { return <div className="security-row"><div className="quick-icon"><Icon size={18}/></div><div className="security-copy"><b>{title}</b><small>{detail}</small></div><span className="muted">{status}</span></div>; }
 
-createRoot(document.getElementById("root")).render(<React.StrictMode><App/></React.StrictMode>);
+createRoot(document.getElementById("root")).render(<React.StrictMode><App/><Analytics/></React.StrictMode>);
