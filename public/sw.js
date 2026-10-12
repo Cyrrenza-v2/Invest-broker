@@ -1,6 +1,5 @@
 const CACHE_NAME = "invest-broker-shell-v2";
 const APP_SHELL = ["/", "/index.html", "/admin.html", "/icon.svg", "/user.webmanifest", "/admin.webmanifest"];
-const isAdminHost = () => self.location.hostname === "admin-invest-broker.vercel.app";
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
 });
@@ -19,7 +18,7 @@ self.addEventListener("fetch", event => {
     }).catch(async () => {
       const cached = await caches.match(request);
       if (cached) return cached;
-      return caches.match(isAdminHost() || url.pathname.startsWith("/admin") ? "/admin.html" : "/index.html");
+      return caches.match(url.pathname.startsWith("/admin") ? "/admin.html" : "/index.html");
     }));
     return;
   }
