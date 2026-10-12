@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { env } from "cloudflare:workers";
 import { SELF, abortAllDurableObjects } from "cloudflare:test";
 
 const TOKEN = "unit-test-only-token";
