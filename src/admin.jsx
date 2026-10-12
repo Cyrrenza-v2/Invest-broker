@@ -153,7 +153,7 @@ function AdminApp(){
   const next={user_complaints:[],wallets:[]};const failed=[];
   for(const [key,result] of results){if(result?.error){next[key]=[];failed.push(key);}else next[key]=result||[];}
   setRows(next);setLoading(false);
-  if(failed.length)setNotice("Some records could not be loaded from the secured Admin API: "+failed.join(", "));
+  setNotice(current=>failed.length?"Some records could not be loaded from the secured Admin API: "+failed.join(", "):current.startsWith("Some records could not be loaded from the secured Admin API:")?"":current);
  };
  useEffect(()=>{if(session&&manager&&mfaVerified)loadData()},[session?.user?.id,session?.access_token,manager,mfaVerified]);
  useEffect(()=>{
