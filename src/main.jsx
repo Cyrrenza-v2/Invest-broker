@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
+import { Analytics } from "@vercel/analytics/react";
 import {
   Activity, ArrowDownLeft, ArrowUpRight, Bell, BriefcaseBusiness, CheckCircle2,
   ChevronRight, CircleHelp, Clock3, CreditCard, Eye, EyeOff, FileCheck2,
@@ -333,6 +334,7 @@ function App() {
       </div>
     </main>
     {authOpen&&<div className="modal-backdrop" onClick={()=>setAuthOpen(false)}><div className="auth-modal" onClick={e=>e.stopPropagation()}><button className="modal-close icon-button" onClick={()=>setAuthOpen(false)} aria-label="Close"><X size={18}/></button><div className="modal-brand"><div className="brand-mark"><TrendingUp size={20}/></div></div><h2>{authMode==="signup"?"Create your account":authMode==="reset"?"Reset password":authMode==="update-password"?"Choose a new password":"Welcome back"}</h2><p>{authMode==="signup"?"Register your personal customer account.":authMode==="reset"?"We’ll email you a secure password reset link.":authMode==="update-password"?"Set a new password to secure your account.":"Sign in to access your private investment dashboard."}</p>{authMode==="signup"&&<><label htmlFor="fullName">Full name</label><input id="fullName" value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your full name" autoComplete="name"/></>}{authMode!=="update-password"&&<><label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required/></>}{authMode!=="reset"&&<><label htmlFor="password">{authMode==="update-password"?"New password":"Password"}</label><input id="password" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters" autoComplete={authMode==="login"?"current-password":"new-password"} minLength={8} required/></>}{authMode==="login"&&<button className="auth-text-link" onClick={()=>setAuthMode("reset")}>Forgot password?</button>}{notice&&<div className="toast auth-notice" role="status">{notice}</div>}<button className="primary-button full-button" onClick={submitAuth} disabled={busy}>{busy?"Please wait…":authMode==="signup"?"Create account":authMode==="reset"?"Send reset link":authMode==="update-password"?"Update password":"Login"} <ChevronRight size={16}/></button><div className="auth-mode-switch">{authMode==="signup"?"Already registered?":authMode==="update-password"?"After updating, sign in again.":"New to Invest Broker?"} {authMode!=="update-password"&&<button onClick={()=>{setAuthMode(authMode==="signup"?"login":"signup");setNotice("");}}>{authMode==="signup"?"Login":"Create account"}</button>}{(authMode==="reset"||authMode==="update-password")&&<button onClick={()=>{setAuthMode("login");setPassword("");setNotice("");}}>Back to login</button>}</div><div className="modal-safety"><LockKeyhole size={14}/> Never share passwords or verification codes.</div></div></div>}
+    <Analytics />
   </div>;
 }
 
