@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
+import { Analytics } from "@vercel/analytics/react";
 import {
   Activity, ArrowDownLeft, ArrowUpRight, Bell, BriefcaseBusiness, CheckCircle2,
   ChevronRight, CircleHelp, Clock3, CreditCard, Eye, EyeOff, FileCheck2,
@@ -400,4 +401,4 @@ function Security({session,disabledAction}) { return <><Panel title="Account sec
 function Info({label,value}) { return <div className="info-cell"><span>{label}</span><b>{value}</b></div>; }
 function SecurityRow({icon:Icon,title,detail,status}) { return <div className="security-row"><div className="quick-icon"><Icon size={18}/></div><div className="security-copy"><b>{title}</b><small>{detail}</small></div><span className="muted">{status}</span></div>; }
 
-createRoot(document.getElementById("root")).render(<React.StrictMode><App/></React.StrictMode>);
+createRoot(document.getElementById("root")).render(<React.StrictMode><App/><Analytics/></React.StrictMode>);
