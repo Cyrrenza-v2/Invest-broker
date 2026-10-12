@@ -1,92 +1,190 @@
-import { Authenticator } from 'otplib';
-import QRCode from 'qrcode';
+type Role = 'user' | 'admin';
+type Route =
+  | '/welcome'
+  | '/login/user'
+  | '/login/admin'
+  | '/register/user'
+  | '/register/admin'
+  | '/user/dashboard'
+  | '/user/marketplace'
+  | '/user/kyc'
+  | '/admin/dashboard'
+  | '/admin/users'
+  | '/admin/approvals'
+  | '/admin/treasury';
 
-type PortalMode = 'user' | 'admin';
-type View = 'welcome' | 'userLogin' | 'adminLogin' | 'userDashboard' | 'adminDashboard';
+type KycStatus = 'not-started' | 'pending' | 'approved' | 'rejected';
 
-type TfaState = {
-  enabled: boolean;
-  secret: string;
-  recoveryCodes: string[];
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: Role;
+  kycStatus: KycStatus;
+  walletBalance: number;
+  invested: number;
+  pendingWithdrawals: number;
 };
 
-const STORAGE_KEY = 'invest-broker-2fa';
-const authenticator = new Authenticator();
+type AppState = {
+  users: User[];
+  activeUserId: string | null;
+};
+
+const STORAGE_KEY = 'invest-broker-app-state-v1';
+
+const seedUsers: User[] = [
+  {
+    id: 'user-01',
+    name: 'Ada Okafor',
+    email: 'user@investbroker.ng',
+    password: 'password123',
+    role: 'user',
+    kycStatus: 'approved',
+    walletBalance: 18420290,
+    invested: 12800000,
+    pendingWithdrawals: 2640000,
+  },
+  {
+    id: 'admin-01',
+    name: 'Mary James',
+    email: 'admin@investbroker.ng',
+    password: 'admin123',
+    role: 'admin',
+    kycStatus: 'approved',
+    walletBalance: 0,
+    invested: 0,
+    pendingWithdrawals: 0,
+  },
+];
+
 const app = document.querySelector('#app');
 
 if (!app) {
-  throw new Error('App root element not found');
+  throw new Error('App root not found');
 }
 
-const state: { view: View; portal: PortalMode; pendingLogin: PortalMode | null } = {
-  view: 'welcome',
-  portal: 'user',
-  pendingLogin: null,
+const defaultState: AppState = {
+  users: seedUsers,
+  activeUserId: null,
 };
 
-const getTfaState = (): TfaState => {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) {
-    return { enabled: false, secret: '', recoveryCodes: [] };
+const readState = (): AppState => {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
+    return defaultState;
   }
 
   try {
-    const parsed = JSON.parse(saved) as Partial<TfaState>;
+    const parsed = JSON.parse(raw) as AppState;
     return {
-      enabled: Boolean(parsed.enabled),
-      secret: parsed.secret ?? '',
-      recoveryCodes: parsed.recoveryCodes ?? [],
+      users: parsed.users ?? defaultState.users,
+      activeUserId: parsed.activeUserId ?? null,
     };
   } catch {
-    return { enabled: false, secret: '', recoveryCodes: [] };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
+    return defaultState;
   }
 };
 
-const saveTfaState = (next: TfaState) => {
+const writeState = (next: AppState) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 };
 
-const createRecoveryCodes = () =>
-  Array.from({ length: 5 }, () =>
-    Math.random().toString(36).slice(2, 8).toUpperCase() +
-    '-' +
-    Math.random().toString(36).slice(2, 6).toUpperCase(),
-  );
+const getActiveUser = (): User | null => {
+  const state = readState();
+  if (!state.activeUserId) return null;
+  return state.users.find((user) => user.id === state.activeUserId) ?? null;
+};
 
-const renderMetricCards = (metrics: Array<{ label: string; value: string; change: string; tone: 'positive' | 'neutral' | 'alert' }>) =>
-  metrics
+const setActiveUser = (user: User | null) => {
+  const state = readState();
+  writeState({ ...state, activeUserId: user ? user.id : null });
+};
+
+const getRouteFromHash = (): Route => {
+  const hash = window.location.hash || '#/welcome';
+  const path = hash.replace('#', '') || '/welcome';
+  const routeMap: Record<string, Route> = {
+    '/welcome': '/welcome',
+    '/login/user': '/login/user',
+    '/login/admin': '/login/admin',
+    '/register/user': '/register/user',
+    '/register/admin': '/register/admin',
+    '/user/dashboard': '/user/dashboard',
+    '/user/marketplace': '/user/marketplace',
+    '/user/kyc': '/user/kyc',
+    '/admin/dashboard': '/admin/dashboard',
+    '/admin/users': '/admin/users',
+    '/admin/approvals': '/admin/approvals',
+    '/admin/treasury': '/admin/treasury',
+  };
+
+  return routeMap[path] ?? '/welcome';
+};
+
+const navigate = (route: Route) => {
+  window.location.hash = route;
+};
+
+const money = (value: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value);
+
+const metricCards = (entries: Array<{ label: string; value: string; change: string; tone: 'positive' | 'neutral' | 'alert' }>) =>
+  entries
     .map(
-      (metric) => `
-        <article class="metric-card metric-${metric.tone}">
-          <p>${metric.label}</p>
-          <h3>${metric.value}</h3>
-          <span>${metric.change}</span>
+      (entry) => `
+        <article class="metric-card metric-${entry.tone}">
+          <p>${entry.label}</p>
+          <h3>${entry.value}</h3>
+          <span>${entry.change}</span>
         </article>
       `,
     )
     .join('');
 
-const renderActivity = (items: Array<{ title: string; details: string; time: string; amount?: string }>) =>
-  items
-    .map(
-      (item) => `
-        <li>
-          <div>
-            <strong>${item.title}</strong>
-            <small>${item.details}</small>
-          </div>
-          <div class="activity-meta">
-            <span>${item.time}</span>
-            ${item.amount ? `<em>${item.amount}</em>` : ''}
-          </div>
-        </li>
-      `,
-    )
-    .join('');
+const sidebar = (role: Role) => {
+  const links = {
+    user: [
+      { route: '/user/dashboard', label: 'Dashboard' },
+      { route: '/user/marketplace', label: 'Marketplace' },
+      { route: '/user/kyc', label: 'KYC' },
+      { route: '/welcome', label: 'Logout' },
+    ],
+    admin: [
+      { route: '/admin/dashboard', label: 'Dashboard' },
+      { route: '/admin/users', label: 'Users' },
+      { route: '/admin/approvals', label: 'Approvals' },
+      { route: '/admin/treasury', label: 'Treasury' },
+      { route: '/welcome', label: 'Logout' },
+    ],
+  } as const;
+
+  return `
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">IB</div>
+        <div>
+          <span>Invest Broker</span>
+          <small>${role === 'user' ? 'Client portal' : 'Admin portal'}</small>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        ${links[role]
+          .map((item) => {
+            const action = item.label === 'Logout' ? 'logout' : 'route';
+            return `<button class="menu-link" data-action="${action}" data-route="${item.route}">${item.label}</button>`;
+          })
+          .join('')}
+      </nav>
+    </aside>
+  `;
+};
 
 const renderWelcome = () => `
   <main class="page-shell">
-    <header class="topbar">
+    <header class="topbar shell-pad">
       <div class="brand-wrap">
         <div class="brand-mark">IB</div>
         <div>
@@ -96,524 +194,577 @@ const renderWelcome = () => `
       </div>
     </header>
 
-    <section class="hero-panel">
+    <section class="hero-panel hero-split shell-pad">
       <div>
         <p class="eyebrow accent">Unified investment platform</p>
-        <h2>Connect clients and operators from one secure core.</h2>
-        <p>Launch a dedicated customer experience and a confidential manager dashboard with shared ledger logic, controls, and compliance workflows.</p>
+        <h2>Secure wealth operations for customers and teams.</h2>
+        <p>Launch a user platform and a private admin workspace with a shared core: onboarding, KYC, wallet, investments, approvals, treasury, and audit workflows.</p>
       </div>
-      <div class="hero-actions">
-        <button class="primary" data-action="open-user-login">Open user portal</button>
-        <button class="secondary" data-action="open-admin-login">Open admin portal</button>
+      <div class="stacked-actions">
+        <button class="primary" data-action="route" data-route="/login/user">User login</button>
+        <button class="secondary" data-action="route" data-route="/login/admin">Admin login</button>
+        <button class="ghost" data-action="route" data-route="/register/user">Create user account</button>
       </div>
     </section>
 
-    <section class="overview-grid">
-      <article class="card accent-panel">
-        <div class="card-title-row">
-          <span class="chip chip-green">User side</span>
-          <span class="mini-status">Live onboarding</span>
-        </div>
+    <section class="feature-grid shell-pad">
+      <article class="card feature-card">
+        <span class="chip chip-green">User side</span>
         <h3>Customer journey</h3>
         <ul>
-          <li>Register, verify and KYC</li>
-          <li>Wallet, investment plans, and returns</li>
-          <li>Deposit, withdraw, support and notifications</li>
+          <li>Registration and verification</li>
+          <li>Wallet, investments, returns</li>
+          <li>Deposits, withdrawals, support</li>
         </ul>
       </article>
 
-      <article class="card accent-panel alt">
-        <div class="card-title-row">
-          <span class="chip chip-blue">Admin side</span>
-          <span class="mini-status">Protected</span>
-        </div>
+      <article class="card feature-card">
+        <span class="chip chip-blue">Admin side</span>
         <h3>Manager workspace</h3>
         <ul>
-          <li>User management and approvals</li>
-          <li>KYC review and compliance</li>
-          <li>Fund movement, treasury and audit logs</li>
+          <li>User management and KYC review</li>
+          <li>Approvals and audit trails</li>
+          <li>Treasury movement controls</li>
         </ul>
       </article>
     </section>
   </main>
 `;
 
-const renderLogin = (mode: PortalMode) => `
+const renderAuthPage = (role: Role, mode: 'login' | 'register') => `
   <main class="page-shell compact-shell">
-    <header class="topbar login-topbar">
+    <header class="topbar shell-pad">
       <div class="brand-wrap">
         <div class="brand-mark">IB</div>
         <div>
-          <p class="eyebrow">${mode === 'user' ? 'User portal' : 'Admin portal'}</p>
-          <h1>${mode === 'user' ? 'Sign in to your account' : 'Manager access'}</h1>
+          <p class="eyebrow">${role === 'user' ? 'User portal' : 'Admin portal'}</p>
+          <h1>${mode === 'login' ? 'Welcome back' : 'Create account'}</h1>
         </div>
       </div>
-      <button class="ghost" data-action="back-to-welcome">Back</button>
+      <button class="ghost" data-action="route" data-route="/welcome">Back</button>
     </header>
 
-    <section class="auth-card">
+    <section class="auth-card shell-pad">
       <div class="auth-header">
-        <span class="chip ${(mode === 'user' ? 'chip-green' : 'chip-blue')}">${mode === 'user' ? 'Client access' : 'Private operations'}</span>
-        <h2>${mode === 'user' ? 'Welcome back' : 'Secure admin login'}</h2>
+        <span class="chip ${role === 'user' ? 'chip-green' : 'chip-blue'}">${role === 'user' ? 'Client access' : 'Private operations'}</span>
+        <h2>${mode === 'login' ? 'Secure sign in' : 'Create your account'}</h2>
       </div>
 
-      <form class="auth-form" novalidate>
-        <label>
-          Email or phone
-          <input type="text" placeholder=${mode === 'user' ? 'user@investbroker.ng' : 'admin@investbroker.ng'} />
-        </label>
-        <label>
-          Password
-          <input type="password" placeholder="••••••••" />
-        </label>
-        <label class="checkbox-row">
-          <input type="checkbox" />
-          <span>Keep me signed in</span>
-        </label>
-        <button type="button" class="primary submit-button" data-action="login-${mode}">${mode === 'user' ? 'Enter dashboard' : 'Continue to manager dashboard'}</button>
+      <form class="auth-form" data-form="auth" data-role="${role}" data-mode="${mode}">
+        ${mode === 'register' ? `<label><span>Full name</span><input name="name" type="text" placeholder="Ada Okafor" required /></label>` : ''}
+        <label><span>Email</span><input name="email" type="email" placeholder="${role === 'user' ? 'user@investbroker.ng' : 'admin@investbroker.ng'}" required /></label>
+        <label><span>Password</span><input name="password" type="password" placeholder="••••••••" required /></label>
+        <button class="primary submit-button" type="submit">${mode === 'login' ? 'Continue' : 'Create account'}</button>
       </form>
     </section>
   </main>
 `;
 
-const userMetrics = [
-  { label: 'Portfolio balance', value: '₦18,420,300', change: '+12.4% vs last month', tone: 'positive' as const },
-  { label: 'Active investments', value: '14', change: '3 new this week', tone: 'neutral' as const },
-  { label: 'Scheduled withdrawals', value: '₦2,640,000', change: '2 approvals pending', tone: 'alert' as const },
-  { label: 'KYC status', value: 'Verified', change: 'No blockers', tone: 'positive' as const },
-];
-
-const adminMetrics = [
-  { label: 'Total users', value: '28,420', change: '+6.2% this month', tone: 'positive' as const },
-  { label: 'Pending KYC', value: '146', change: '18 need follow-up', tone: 'alert' as const },
-  { label: 'Pending withdrawals', value: '34', change: '9 over SLA', tone: 'alert' as const },
-  { label: 'Treasury position', value: '₦297.9M', change: 'Healthy reserve ratio', tone: 'positive' as const },
-];
-
-const userActivities = [
-  { title: 'Investment matured', details: 'Farm Credit Note • 320 days', time: '15 mins ago', amount: '+₦410,000' },
-  { title: 'Deposit received', details: 'Zenith Bank transfer', time: '3 hours ago', amount: '+₦750,000' },
-  { title: 'Withdrawal queued', details: 'Bank transfer • GTBank', time: 'Yesterday', amount: '-₦650,000' },
-  { title: 'KYC documents approved', details: 'ID + address verification', time: '2 days ago' },
-];
-
-const adminActivities = [
-  { title: 'Compliance review completed', details: 'User #18472 • medium risk', time: '11 mins ago' },
-  { title: 'Large deposit flagged', details: 'Bank transfer amount reviewed', time: '55 mins ago', amount: '₦7.5M' },
-  { title: 'Approved withdrawal batch', details: '18 requests processed', time: '3 hours ago', amount: '-₦4.2M' },
-  { title: 'AI assistant summary', details: 'Investment activity and reconciliation differences', time: 'Today' },
-];
-
-const userRows = [
-  { label: 'Ada Okafor', value: 'Treasury Plus', secondary: '₦1,250,000', status: 'Active' },
-  { label: 'Chukwu Nnaji', value: 'Growth Fund', secondary: '₦950,000', status: 'Pending' },
-  { label: 'Aisha Bello', value: 'Property Yield', secondary: '₦2,880,000', status: 'Matured' },
-  { label: 'Tunde Salami', value: 'Fixed Income', secondary: '₦625,000', status: 'Active' },
-];
-
-const adminRows = [
-  { label: 'KYC review', value: 'Operations', secondary: '146 cases', status: 'Needs review' },
-  { label: 'Withdrawal queue', value: 'Treasury', secondary: '34 requests', status: 'Pending' },
-  { label: 'Treasury transfer', value: 'Finance', secondary: '₦18.2M', status: 'Approved' },
-  { label: 'Risk exception', value: 'Compliance', secondary: '7 alerts', status: 'Escalated' },
-];
-
-const renderTfaBox = (mode: PortalMode) => {
-  const tfa = getTfaState();
-  const title = tfa.enabled ? '2FA enabled' : '2FA status';
-  const actionText = tfa.enabled ? 'Manage 2FA' : 'Enable 2FA';
-
-  return `
-    <aside class="security-box ${mode === 'admin' ? 'admin-box' : ''}">
-      <div class="security-header">
+const renderDashboardLayout = (role: Role, main: string) => `
+  <main class="dashboard-shell">
+    ${sidebar(role)}
+    <section class="main-panel">
+      <header class="topbar panel-header-row">
         <div>
-          <p class="eyebrow">Security</p>
-          <h4>${title}</h4>
+          <p class="eyebrow">${role === 'user' ? 'User platform' : 'Admin platform'}</p>
+          <h2>${role === 'user' ? 'Customer dashboard' : 'Operations dashboard'}</h2>
         </div>
-        <button class="ghost small" data-action="toggle-2fa">${actionText}</button>
-      </div>
-      <p>${tfa.enabled ? 'Authenticator app verification is enabled for this account.' : 'Protect this account with a TOTP app using Cloudflare-compatible 2FA setup.'}</p>
-      <ul>
-        <li>${tfa.enabled ? 'Recovery codes available' : 'No TOTP configured yet'}</li>
-        <li>${tfa.enabled ? 'Verification is required on login' : 'Add a mobile authenticator app'}</li>
-      </ul>
-    </aside>
-  `;
-};
-
-const renderDashboard = (mode: PortalMode) => {
-  const metrics = mode === 'user' ? userMetrics : adminMetrics;
-  const activities = mode === 'user' ? userActivities : adminActivities;
-  const rows = mode === 'user' ? userRows : adminRows;
-  const chartBars = mode === 'user' ? [54, 72, 48, 88, 64] : [66, 58, 74, 92, 62];
-
-  return `
-    <main class="page-shell">
-      <header class="topbar dashboard-topbar">
-        <div class="brand-wrap">
-          <div class="brand-mark">IB</div>
-          <div>
-            <p class="eyebrow">${mode === 'user' ? 'User platform' : 'Admin / manager platform'}</p>
-            <h1>${mode === 'user' ? 'Welcome, Ada' : 'Operations command center'}</h1>
-          </div>
-        </div>
-
-        <nav class="nav-pills">
-          <button class="pill active">${mode === 'user' ? 'Overview' : 'Dashboard'}</button>
-          <button class="pill">${mode === 'user' ? 'Wallet' : 'KYC'}</button>
-          <button class="pill">${mode === 'user' ? 'Investments' : 'Treasury'}</button>
+        <div class="header-actions">
+          <span class="status-pill">System stable</span>
           <button class="ghost" data-action="logout">Logout</button>
-        </nav>
+        </div>
       </header>
-
-      <section class="hero-panel dashboard-hero ${mode === 'user' ? 'user-hero' : 'admin-hero'}">
-        <div>
-          <p class="eyebrow accent">${mode === 'user' ? 'Customer overview' : 'Operations overview'}</p>
-          <h2>${mode === 'user' ? 'Build wealth with clarity and control.' : 'Track risk, approvals, and treasury in real time.'}</h2>
-          <p>${mode === 'user' ? 'Monitor returns, investment opportunities, wallet activity, and onboarding progress.' : 'Review compliance actions, approvals, reconciliations, and financial controls across the platform.'}</p>
-        </div>
-        <div class="hero-badge">
-          <span class="pulse"></span>
-          ${mode === 'user' ? 'This month' : 'Current cycle'} · operationally stable
-        </div>
-      </section>
-
-      <section class="metrics-grid">
-        ${renderMetricCards(metrics)}
-      </section>
-
-      <section class="dashboard-grid">
-        <article class="card panel-card">
-          <div class="card-title-row">
-            <h3>Recent activity</h3>
-            <button class="ghost small">View all</button>
-          </div>
-          <ul class="activity-list">${renderActivity(activities)}</ul>
-        </article>
-
-        <article class="card panel-card">
-          <div class="card-title-row">
-            <h3>${mode === 'user' ? 'Priority focus' : 'Current controls'}</h3>
-            <button class="ghost small">Review</button>
-          </div>
-          <ul class="focus-list">
-            ${(mode === 'user'
-              ? ['Digital onboarding', 'Wallet reconciliation', 'Investment marketplace', 'Treasury-safe withdrawal flow']
-              : ['User governance', 'KYC and risk controls', 'Treasury movement approvals', 'Immutable audit logging']
-            )
-              .map((item) => `<li>${item}</li>`)
-              .join('')}
-          </ul>
-        </article>
-      </section>
-
-      <section class="card panel-card chart-card">
-        <div class="card-title-row">
-          <h3>${mode === 'user' ? 'Portfolio trend' : 'Control indexes'}</h3>
-          <button class="ghost small">Export</button>
-        </div>
-        <div class="chart">
-          <div class="chart-labels">
-            <span>Jan</span>
-            <span>Feb</span>
-            <span>Mar</span>
-            <span>Apr</span>
-            <span>May</span>
-          </div>
-          <div class="chart-bars">
-            ${chartBars.map((height) => `<span style="height:${height}%"></span>`).join('')}
-          </div>
-        </div>
-      </section>
-
-      <section class="card panel-card table-card">
-        <div class="card-title-row">
-          <h3>${mode === 'user' ? 'Recent investments' : 'Operational queue'}</h3>
-          <button class="ghost small">Manage</button>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>${mode === 'user' ? 'Investor' : 'Item'}</th>
-              <th>${mode === 'user' ? 'Plan' : 'Owner'}</th>
-              <th>${mode === 'user' ? 'Amount' : 'Value'}</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows
-              .map(
-                (row) => `
-                  <tr>
-                    <td>${row.label}</td>
-                    <td>${row.value}</td>
-                    <td>${row.secondary}</td>
-                    <td><span class="tag">${row.status}</span></td>
-                  </tr>
-                `,
-              )
-              .join('')}
-          </tbody>
-        </table>
-      </section>
-
-      ${renderTfaBox(mode)}
-    </main>
-  `;
-};
-
-const renderTfaSetup = async (mode: PortalMode) => {
-  const current = getTfaState();
-  const secret = current.secret || authenticator.generateSecret();
-  const otpauth = authenticator.keyuri(mode === 'user' ? 'ada@investbroker.ng' : 'manager@investbroker.ng', 'Invest Broker', secret);
-  const qr = await QRCode.toDataURL(otpauth);
-
-  const recoveryCodes = current.recoveryCodes.length ? current.recoveryCodes : createRecoveryCodes();
-
-  const html = `
-    <main class="page-shell compact-shell">
-      <header class="topbar login-topbar">
-        <div class="brand-wrap">
-          <div class="brand-mark">IB</div>
-          <div>
-            <p class="eyebrow">Security</p>
-            <h1>Authenticator setup</h1>
-          </div>
-        </div>
-        <button class="ghost" data-action="close-2fa">Back</button>
-      </header>
-
-      <section class="auth-card tfa-card">
-        <div class="auth-header">
-          <span class="chip chip-blue">TOTP 2FA</span>
-          <h2>Set up your mobile authenticator</h2>
-        </div>
-
-        <div class="qr-wrap">
-          <img src="${qr}" alt="Authenticator QR code" />
-        </div>
-
-        <div class="code-box">
-          <p>Manual key</p>
-          <code>${secret}</code>
-        </div>
-
-        <label class="field-label">
-          Enter the 6-digit code from your app
-          <input type="text" id="totp-code" maxlength="6" placeholder="123456" inputmode="numeric" />
-        </label>
-
-        <button class="primary submit-button" data-action="confirm-2fa">Verify and enable</button>
-
-        <div class="security-note">
-          <strong>Recovery codes:</strong>
-          <ul>
-            ${recoveryCodes.map((code) => `<li>${code}</li>`).join('')}
-          </ul>
-        </div>
-      </section>
-    </main>
-  `;
-
-  app.innerHTML = html;
-  const input = document.querySelector('#totp-code') as HTMLInputElement | null;
-  if (input) input.focus();
-};
-
-const renderTfaPrompt = (mode: PortalMode) => `
-  <main class="page-shell compact-shell">
-    <header class="topbar login-topbar">
-      <div class="brand-wrap">
-        <div class="brand-mark">IB</div>
-        <div>
-          <p class="eyebrow">Two-factor auth</p>
-          <h1>Verify your code</h1>
-        </div>
-      </div>
-      <button class="ghost" data-action="cancel-2fa-login">Cancel</button>
-    </header>
-
-    <section class="auth-card tfa-card">
-      <div class="auth-header">
-        <span class="chip ${mode === 'user' ? 'chip-green' : 'chip-blue'}">${mode === 'user' ? 'User' : 'Admin'} verification</span>
-        <h2>Enter the 6-digit code</h2>
-      </div>
-
-      <label class="field-label">
-        TOTP code
-        <input type="text" id="login-totp" maxlength="6" placeholder="123456" inputmode="numeric" />
-      </label>
-
-      <button class="primary submit-button" data-action="verify-login-2fa">Continue</button>
-      <p class="helper-text">Use the authenticator app linked to your account. Recovery codes are also accepted during fallback.</p>
+      ${main}
     </section>
   </main>
 `;
 
-const renderApp = () => {
-  switch (state.view) {
-    case 'welcome':
-      app.innerHTML = renderWelcome();
-      break;
-    case 'userLogin':
-      app.innerHTML = renderLogin('user');
-      break;
-    case 'adminLogin':
-      app.innerHTML = renderLogin('admin');
-      break;
-    case 'userDashboard':
-      app.innerHTML = renderDashboard('user');
-      break;
-    case 'adminDashboard':
-      app.innerHTML = renderDashboard('admin');
-      break;
-    default:
-      app.innerHTML = renderWelcome();
-      break;
+const renderUserDashboard = () => {
+  const user = getActiveUser();
+  if (!user || user.role !== 'user') {
+    navigate('/welcome');
+    return '';
   }
+
+  const metrics = [
+    { label: 'Portfolio balance', value: money(user.walletBalance), change: '+12.4% vs last month', tone: 'positive' as const },
+    { label: 'Invested capital', value: money(user.invested), change: '3 new this week', tone: 'neutral' as const },
+    { label: 'Pending withdrawals', value: money(user.pendingWithdrawals), change: '2 approvals pending', tone: 'alert' as const },
+    { label: 'KYC status', value: user.kycStatus.toUpperCase(), change: 'No blockers', tone: 'positive' as const },
+  ];
+
+  const main = `
+    <section class="hero-panel user-hero">
+      <div>
+        <p class="eyebrow accent">Welcome back</p>
+        <h3>Hello, ${user.name.split(' ')[0]}</h3>
+        <p>Monitor investments, wallet activity, and withdrawals from a single secure workspace.</p>
+      </div>
+      <div class="hero-badge">
+        <span class="pulse"></span>
+        Operationally stable
+      </div>
+    </section>
+
+    <section class="metrics-grid">
+      ${metricCards(metrics)}
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="card panel-card">
+        <div class="card-title-row">
+          <h3>Recent activity</h3>
+          <button class="ghost small" data-action="route" data-route="/user/dashboard">View all</button>
+        </div>
+        <ul class="activity-list">
+          <li><div><strong>Investment matured</strong><small>Farm Credit Note • 320 days</small></div><div class="activity-meta"><span>15 mins ago</span><em>+₦410,000</em></div></li>
+          <li><div><strong>Deposit received</strong><small>Zenith Bank transfer</small></div><div class="activity-meta"><span>3 hours ago</span><em>+₦750,000</em></div></li>
+          <li><div><strong>Withdrawal queued</strong><small>Bank transfer • GTBank</small></div><div class="activity-meta"><span>Yesterday</span><em>-₦650,000</em></div></li>
+        </ul>
+      </article>
+
+      <article class="card panel-card">
+        <div class="card-title-row">
+          <h3>Priority focus</h3>
+          <button class="ghost small" data-action="route" data-route="/user/marketplace">Open marketplace</button>
+        </div>
+        <ul class="focus-list">
+          <li>Digital onboarding and identity verification</li>
+          <li>Wallet reconciliation and investment access</li>
+          <li>Withdrawal eligibility and compliance review</li>
+        </ul>
+      </article>
+    </section>
+  `;
+
+  return renderDashboardLayout('user', main);
 };
 
-const proceedToDashboard = (mode: PortalMode) => {
-  const tfaState = getTfaState();
-  if (tfaState.enabled) {
-    state.pendingLogin = mode;
-    app.innerHTML = renderTfaPrompt(mode);
-    return;
+const renderAdminDashboard = () => {
+  const user = getActiveUser();
+  if (!user || user.role !== 'admin') {
+    navigate('/welcome');
+    return '';
   }
 
-  state.view = mode === 'user' ? 'userDashboard' : 'adminDashboard';
-  state.portal = mode;
-  renderApp();
+  const metrics = [
+    { label: 'Total users', value: '28,420', change: '+6.2% this month', tone: 'positive' as const },
+    { label: 'Pending KYC', value: '146', change: '18 need follow-up', tone: 'alert' as const },
+    { label: 'Pending withdrawals', value: '34', change: '9 over SLA', tone: 'alert' as const },
+    { label: 'Treasury position', value: '₦297.9M', change: 'Healthy reserve ratio', tone: 'positive' as const },
+  ];
+
+  const main = `
+    <section class="hero-panel admin-hero">
+      <div>
+        <p class="eyebrow accent">Operations overview</p>
+        <h3>Review risk, approvals, and treasury in real time.</h3>
+        <p>Monitor compliance, withdrawals, KYC review, and treasury flows across the platform.</p>
+      </div>
+      <div class="hero-badge">
+        <span class="pulse"></span>
+        Current cycle
+      </div>
+    </section>
+
+    <section class="metrics-grid">
+      ${metricCards(metrics)}
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="card panel-card">
+        <div class="card-title-row">
+          <h3>Approval queue</h3>
+          <button class="ghost small" data-action="route" data-route="/admin/approvals">Review</button>
+        </div>
+        <ul class="activity-list">
+          <li><div><strong>KYC decision needed</strong><small>User #18472 • medium risk</small></div><div class="activity-meta"><span>11 mins ago</span></div></li>
+          <li><div><strong>Withdrawal review</strong><small>34 requests pending approval</small></div><div class="activity-meta"><span>55 mins ago</span></div></li>
+          <li><div><strong>Treasury transfer</strong><small>18.2M pending verification</small></div><div class="activity-meta"><span>3 hours ago</span></div></li>
+        </ul>
+      </article>
+
+      <article class="card panel-card">
+        <div class="card-title-row">
+          <h3>Current controls</h3>
+          <button class="ghost small" data-action="route" data-route="/admin/treasury">Open treasury</button>
+        </div>
+        <ul class="focus-list">
+          <li>User governance and access review</li>
+          <li>KYC and risk controls</li>
+          <li>Immutable audit logging</li>
+          <li>Fund movement approvals</li>
+        </ul>
+      </article>
+    </section>
+  `;
+
+  return renderDashboardLayout('admin', main);
 };
 
-const handleLoginConfirm = () => {
-  const codeInput = document.querySelector('#login-totp') as HTMLInputElement | null;
-  const code = codeInput?.value.trim() ?? '';
-  const tfaState = getTfaState();
-
-  if (!state.pendingLogin) {
-    return;
+const renderMarketplace = () => {
+  const user = getActiveUser();
+  if (!user || user.role !== 'user') {
+    navigate('/welcome');
+    return '';
   }
 
-  const isValid = code.length === 6 && authenticator.check(code, tfaState.secret);
-  if (!isValid) {
-    const recovery = tfaState.recoveryCodes.includes(code.toUpperCase());
-    if (!recovery) {
-      alert('Invalid 2FA code. Please try again or use a recovery code.');
+  const plans = [
+    { name: 'Treasury Plus', returnText: '12% p.a.', min: 100000, duration: '12 months' },
+    { name: 'Growth Fund', returnText: '15% p.a.', min: 250000, duration: '18 months' },
+    { name: 'Property Yield', returnText: '18% p.a.', min: 500000, duration: '24 months' },
+  ];
+
+  const main = `
+    <section class="page-section-card">
+      <div class="card-title-row">
+        <div>
+          <p class="eyebrow accent">Marketplace</p>
+          <h3>Investment plans</h3>
+        </div>
+      </div>
+
+      <div class="plan-grid">
+        ${plans
+          .map(
+            (plan) => `
+              <article class="plan-card">
+                <div class="plan-badge">${plan.name}</div>
+                <h4>${plan.name}</h4>
+                <p>Minimum: ${money(plan.min)}</p>
+                <p>Duration: ${plan.duration}</p>
+                <p>Projected return: ${plan.returnText}</p>
+                <button class="primary" data-action="buy-plan" data-plan="${plan.name}">Invest now</button>
+              </article>
+            `,
+          )
+          .join('')}
+      </div>
+    </section>
+  `;
+
+  return renderDashboardLayout('user', main);
+};
+
+const renderKyc = () => {
+  const user = getActiveUser();
+  if (!user || user.role !== 'user') {
+    navigate('/welcome');
+    return '';
+  }
+
+  const main = `
+    <section class="page-section-card">
+      <div class="card-title-row">
+        <div>
+          <p class="eyebrow accent">KYC</p>
+          <h3>Verification status</h3>
+        </div>
+        <span class="status-pill success">${user.kycStatus}</span>
+      </div>
+
+      <div class="two-column-grid">
+        <div class="card mini-panel">
+          <h4>Required documents</h4>
+          <ul class="check-list">
+            <li>Government-issued ID</li>
+            <li>Proof of address</li>
+            <li>Bank verification</li>
+            <li>Passport photograph</li>
+          </ul>
+        </div>
+
+        <div class="card mini-panel">
+          <h4>Review timeline</h4>
+          <ul class="timeline">
+            <li>Not started</li>
+            <li>Pending review</li>
+            <li>Under review</li>
+            <li>Approved or rejected</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card upload-box">
+        <h4>Upload supporting documents</h4>
+        <button class="primary" data-action="upload-kyc">Upload verification documents</button>
+      </div>
+    </section>
+  `;
+
+  return renderDashboardLayout('user', main);
+};
+
+const renderAdminUsers = () => {
+  const state = readState();
+  const users = state.users.filter((u) => u.role === 'user');
+
+  const main = `
+    <section class="page-section-card">
+      <div class="card-title-row">
+        <div>
+          <p class="eyebrow accent">User management</p>
+          <h3>Portfolio users</h3>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>KYC</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users
+            .map(
+              (u) => `
+                <tr>
+                  <td>${u.name}</td>
+                  <td>${u.email}</td>
+                  <td>${u.kycStatus}</td>
+                  <td><span class="tag">${u.kycStatus === 'approved' ? 'Verified' : 'Needs review'}</span></td>
+                </tr>
+              `,
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </section>
+  `;
+
+  return renderDashboardLayout('admin', main);
+};
+
+const renderAdminApprovals = () => {
+  const main = `
+    <section class="page-section-card">
+      <div class="card-title-row">
+        <div>
+          <p class="eyebrow accent">Approvals</p>
+          <h3>Review queue</h3>
+        </div>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Request</th>
+            <th>Owner</th>
+            <th>Value</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>KYC review</td>
+            <td>Ada Okafor</td>
+            <td>₦2.4M</td>
+            <td><div class="inline-actions"><button class="primary small-btn" data-action="approve-request">Approve</button><button class="ghost small-btn" data-action="reject-request">Reject</button></div></td>
+          </tr>
+          <tr>
+            <td>Withdrawal approval</td>
+            <td>David Adebayo</td>
+            <td>₦850,000</td>
+            <td><div class="inline-actions"><button class="primary small-btn" data-action="approve-request">Approve</button><button class="ghost small-btn" data-action="reject-request">Reject</button></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  `;
+
+  return renderDashboardLayout('admin', main);
+};
+
+const renderTreasury = () => {
+  const main = `
+    <section class="page-section-card">
+      <div class="card-title-row">
+        <div>
+          <p class="eyebrow accent">Treasury</p>
+          <h3>Fund movement and reconciliation</h3>
+        </div>
+      </div>
+
+      <div class="two-column-grid">
+        <article class="card mini-panel">
+          <h4>Movement overview</h4>
+          <ul class="check-list">
+            <li>Source: Client funds</li>
+            <li>Destination: Treasury reserve</li>
+            <li>Reason: Investment settlement</li>
+            <li>Approval: Manager override</li>
+          </ul>
+        </article>
+
+        <article class="card mini-panel">
+          <h4>Recent treasury actions</h4>
+          <ul class="timeline">
+            <li>₦18.2M transfer approved</li>
+            <li>₦7.5M large deposit flagged</li>
+            <li>Reconciliation review open</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="card upload-box">
+        <h4>Approve or reject treasury request</h4>
+        <div class="inline-actions">
+          <button class="primary small-btn" data-action="approve-treasury">Approve</button>
+          <button class="ghost small-btn" data-action="reject-treasury">Reject</button>
+        </div>
+      </div>
+    </section>
+  `;
+
+  return renderDashboardLayout('admin', main);
+};
+
+const routeToComponent = (route: Route) => {
+  if (route === '/welcome') return renderWelcome();
+  if (route === '/login/user') return renderAuthPage('user', 'login');
+  if (route === '/login/admin') return renderAuthPage('admin', 'login');
+  if (route === '/register/user') return renderAuthPage('user', 'register');
+  if (route === '/register/admin') return renderAuthPage('admin', 'register');
+  if (route === '/user/dashboard') return renderUserDashboard();
+  if (route === '/user/marketplace') return renderMarketplace();
+  if (route === '/user/kyc') return renderKyc();
+  if (route === '/admin/dashboard') return renderAdminDashboard();
+  if (route === '/admin/users') return renderAdminUsers();
+  if (route === '/admin/approvals') return renderAdminApprovals();
+  if (route === '/admin/treasury') return renderTreasury();
+  return renderWelcome();
+};
+
+const requireLogin = (role: Role) => {
+  const user = getActiveUser();
+  if (!user || user.role !== role) {
+    navigate('/welcome');
+    return false;
+  }
+  return true;
+};
+
+const handleAuthSubmit = (event: SubmitEvent) => {
+  event.preventDefault();
+  const form = event.target as HTMLFormElement;
+  const formData = new FormData(form);
+  const role = form.dataset.role as Role;
+  const mode = form.dataset.mode as 'login' | 'register';
+  const state = readState();
+
+  const email = String(formData.get('email') ?? '').trim();
+  const password = String(formData.get('password') ?? '').trim();
+
+  if (mode === 'login') {
+    const match = state.users.find((user) => user.email.toLowerCase() === email.toLowerCase() && user.password === password && user.role === role);
+    if (!match) {
+      alert('Invalid credentials for this portal.');
       return;
     }
-  }
-
-  const targetView = state.pendingLogin === 'user' ? 'userDashboard' : 'adminDashboard';
-  state.view = targetView;
-  state.portal = state.pendingLogin;
-  state.pendingLogin = null;
-  renderApp();
-};
-
-const enableTfa = async () => {
-  const mode = state.portal || 'user';
-  const secret = authenticator.generateSecret();
-  const next: TfaState = {
-    enabled: false,
-    secret,
-    recoveryCodes: createRecoveryCodes(),
-  };
-  saveTfaState(next);
-  await renderTfaSetup(mode);
-};
-
-const confirmTfaSetup = () => {
-  const codeInput = document.querySelector('#totp-code') as HTMLInputElement | null;
-  const code = codeInput?.value.trim() ?? '';
-  const tfaState = getTfaState();
-
-  if (!tfaState.secret) {
-    alert('No secret has been generated yet.');
+    setActiveUser(match);
+    navigate(role === 'user' ? '/user/dashboard' : '/admin/dashboard');
     return;
   }
 
-  const valid = authenticator.check(code, tfaState.secret);
-  if (!valid) {
-    alert('The verification code is invalid. Please check the authenticator app and try again.');
+  const name = String(formData.get('name') ?? '').trim();
+  const existing = state.users.find((user) => user.email.toLowerCase() === email.toLowerCase());
+  if (existing) {
+    alert('This email is already registered. Please log in instead.');
     return;
   }
 
-  const next = {
-    enabled: true,
-    secret: tfaState.secret,
-    recoveryCodes: tfaState.recoveryCodes.length ? tfaState.recoveryCodes : createRecoveryCodes(),
+  const newUser: User = {
+    id: `${role}-${Date.now()}`,
+    name,
+    email,
+    password,
+    role,
+    kycStatus: 'not-started',
+    walletBalance: role === 'user' ? 0 : 0,
+    invested: 0,
+    pendingWithdrawals: 0,
   };
-  saveTfaState(next);
 
-  state.view = state.portal === 'user' ? 'userDashboard' : 'adminDashboard';
-  renderApp();
+  state.users.push(newUser);
+  writeState(state);
+  setActiveUser(newUser);
+  navigate(role === 'user' ? '/user/dashboard' : '/admin/dashboard');
 };
 
-const handleAction = (action: string) => {
-  switch (action) {
-    case 'open-user-login':
-      state.view = 'userLogin';
-      state.portal = 'user';
-      renderApp();
-      break;
-    case 'open-admin-login':
-      state.view = 'adminLogin';
-      state.portal = 'admin';
-      renderApp();
-      break;
-    case 'back-to-welcome':
-      state.view = 'welcome';
-      renderApp();
-      break;
-    case 'login-user':
-      proceedToDashboard('user');
-      break;
-    case 'login-admin':
-      proceedToDashboard('admin');
-      break;
-    case 'verify-login-2fa':
-      handleLoginConfirm();
-      break;
-    case 'cancel-2fa-login':
-      state.pendingLogin = null;
-      state.view = state.portal === 'user' ? 'userLogin' : 'adminLogin';
-      renderApp();
-      break;
-    case 'logout':
-      state.view = 'welcome';
-      state.pendingLogin = null;
-      renderApp();
-      break;
-    case 'toggle-2fa':
-      if (getTfaState().enabled) {
-        const next = { enabled: false, secret: '', recoveryCodes: [] };
-        saveTfaState(next);
-        state.view = state.portal === 'user' ? 'userDashboard' : 'adminDashboard';
-        renderApp();
-      } else {
-        void enableTfa();
-      }
-      break;
-    case 'confirm-2fa':
-      confirmTfaSetup();
-      break;
-    case 'close-2fa':
-      state.view = state.portal === 'user' ? 'userDashboard' : 'adminDashboard';
-      renderApp();
-      break;
-    default:
-      break;
+const handleAction = (action: string, route?: string, plan?: string) => {
+  if (action === 'route' && route) {
+    if (route.startsWith('/user') && !requireLogin('user')) return;
+    if (route.startsWith('/admin') && !requireLogin('admin')) return;
+    navigate(route as Route);
+    return;
+  }
+
+  if (action === 'logout') {
+    setActiveUser(null);
+    navigate('/welcome');
+    return;
+  }
+
+  if (action === 'buy-plan' && plan) {
+    const user = getActiveUser();
+    if (!user || user.role !== 'user') return;
+    alert(`Investment request started for ${plan}. This mirrors a real marketplace flow and will route to the order review process.`);
+    return;
+  }
+
+  if (action === 'upload-kyc') {
+    alert('KYC upload flow started. This would connect to secure document storage and review workflow.');
+    return;
+  }
+
+  if (action === 'approve-request' || action === 'approve-treasury') {
+    alert('Approval recorded in the audit trail. This matches the admin approvals workflow.');
+    return;
+  }
+
+  if (action === 'reject-request' || action === 'reject-treasury') {
+    alert('Request rejected and flagged for follow-up.');
+    return;
   }
 };
+
+const renderApp = () => {
+  const route = getRouteFromHash();
+  const activeUser = getActiveUser();
+
+  if (route.startsWith('/user') && (!activeUser || activeUser.role !== 'user')) {
+    app.innerHTML = renderWelcome();
+    return;
+  }
+
+  if (route.startsWith('/admin') && (!activeUser || activeUser.role !== 'admin')) {
+    app.innerHTML = renderWelcome();
+    return;
+  }
+
+  app.innerHTML = routeToComponent(route);
+};
+
+app.addEventListener('submit', (event) => {
+  const form = event.target as HTMLFormElement | null;
+  if (!form || !form.matches('[data-form="auth"]')) return;
+  handleAuthSubmit(event as SubmitEvent);
+});
 
 app.addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
   const action = target.dataset.action;
+  const route = target.dataset.route;
+  const plan = target.dataset.plan;
+
   if (action) {
-    handleAction(action);
+    handleAction(action, route as Route | undefined, plan);
   }
 });
+
+window.addEventListener('hashchange', renderApp);
 
 renderApp();
