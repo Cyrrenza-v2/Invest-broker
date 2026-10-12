@@ -1,0 +1,239 @@
+type Platform = 'user' | 'admin';
+
+type Metric = {
+  label: string;
+  value: string;
+  change: string;
+  tone: 'positive' | 'neutral' | 'alert';
+};
+
+type ActivityItem = {
+  title: string;
+  details: string;
+  time: string;
+  amount?: string;
+};
+
+const platformConfig = {
+  user: {
+    label: 'User platform',
+    tone: 'emerald',
+    headline: 'Customer experience and wealth journey',
+    summary: 'A secure portal for onboarding, investing, wallet activity, withdrawals, KYC, and account visibility.',
+    metrics: [
+      { label: 'Portfolio balance', value: '₦18,420,300', change: '+12.4% vs last month', tone: 'positive' },
+      { label: 'Active investments', value: '14', change: '3 new this week', tone: 'neutral' },
+      { label: 'Scheduled withdrawals', value: '₦2,640,000', change: '2 approvals pending', tone: 'alert' },
+      { label: 'KYC status', value: 'Verified', change: 'No blockers', tone: 'positive' },
+    ] as Metric[],
+    activity: [
+      { title: 'Investment matured', details: 'Farm Credit Note • 320 days', time: '15 mins ago', amount: '+₦410,000' },
+      { title: 'Deposit received', details: 'Zenith Bank transfer', time: '3 hours ago', amount: '+₦750,000' },
+      { title: 'Withdrawal queued', details: 'Bank transfer • GTBank', time: 'Yesterday', amount: '-₦650,000' },
+      { title: 'KYC documents approved', details: 'ID + address verification', time: '2 days ago' },
+    ] as ActivityItem[],
+    priority: [
+      'Digital onboarding',
+      'Wallet reconciliation',
+      'Investment marketplace',
+      'Treasury-safe withdrawal flow',
+    ],
+  },
+  admin: {
+    label: 'Admin / manager platform',
+    tone: 'blue',
+    headline: 'Operations, risk, treasury, and compliance',
+    summary: 'A distinct management layer for approvals, monitoring, reconciliations, AI-assisted operations, and audit control.',
+    metrics: [
+      { label: 'Total users', value: '28,420', change: '+6.2% this month', tone: 'positive' },
+      { label: 'Pending KYC', value: '146', change: '18 require follow-up', tone: 'alert' },
+      { label: 'Pending withdrawals', value: '34', change: '9 over SLA', tone: 'alert' },
+      { label: 'Treasury position', value: '₦297.9M', change: 'Healthy reserve ratio', tone: 'positive' },
+    ] as Metric[],
+    activity: [
+      { title: 'Compliance review completed', details: 'User #18472 • medium risk', time: '11 mins ago' },
+      { title: 'Large deposit flagged', details: 'Bank transfer amount reviewed', time: '55 mins ago', amount: '₦7.5M' },
+      { title: 'Approved withdrawal batch', details: '18 requests processed', time: '3 hours ago', amount: '-₦4.2M' },
+      { title: 'AI assistant summary', details: 'Investment activity and reconciliation differences', time: 'Today' },
+    ] as ActivityItem[],
+    priority: [
+      'User governance',
+      'KYC and risk controls',
+      'Treasury movement approvals',
+      'Immutable audit logging',
+    ],
+  },
+} as const;
+
+const app = document.querySelector('#app');
+
+if (!app) {
+  throw new Error('Missing app root element');
+}
+
+const renderOverview = (platform: Platform) => {
+  const config = platformConfig[platform];
+  const topCards = config.metrics
+    .map(
+      (metric) => `
+        <article class="stat-card ${metric.tone}">
+          <p>${metric.label}</p>
+          <h3>${metric.value}</h3>
+          <span>${metric.change}</span>
+        </article>
+      `,
+    )
+    .join('');
+
+  const recentActivity = config.activity
+    .map(
+      (item) => `
+        <li>
+          <div>
+            <strong>${item.title}</strong>
+            <small>${item.details}</small>
+          </div>
+          <div class="activity-meta">
+            <span>${item.time}</span>
+            ${item.amount ? `<em>${item.amount}</em>` : ''}
+          </div>
+        </li>
+      `,
+    )
+    .join('');
+
+  const priorities = config.priority
+    .map(
+      (item) => `
+        <li>${item}</li>
+      `,
+    )
+    .join('');
+
+  const barHeights = platform === 'user' ? [72, 54, 92, 64, 86] : [62, 74, 45, 83, 68];
+  const bars = barHeights
+    .map(
+      (height) => `
+        <span style="height: ${height}%"></span>
+      `,
+    )
+    .join('');
+
+  const pipeline = platform === 'user'
+    ? ['Register', 'Verify', 'Complete profile', 'KYC', 'Dashboard']
+    : ['Admin login', '2FA', 'Role auth', 'Approval', 'Monitor'];
+
+  const steps = pipeline
+    .map(
+      (step, index) => `
+        <div class="step">
+          <span>${index + 1}</span>
+          <p>${step}</p>
+        </div>
+      `,
+    )
+    .join('');
+
+  return `
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-wrap">
+          <div class="brand-mark">IB</div>
+          <div>
+            <p class="eyebrow">Invest Broker</p>
+            <h1>Platform foundation</h1>
+          </div>
+        </div>
+
+        <nav class="nav-tabs" aria-label="Platform tabs">
+          <button class="tab-button ${platform === 'user' ? 'active' : ''}" data-platform="user">User platform</button>
+          <button class="tab-button ${platform === 'admin' ? 'active' : ''}" data-platform="admin">Admin platform</button>
+        </nav>
+      </header>
+
+      <section class="hero panel ${config.tone}">
+        <div>
+          <p class="eyebrow">${config.label}</p>
+          <h2>${config.headline}</h2>
+          <p>${config.summary}</p>
+        </div>
+        <div class="hero-badge">
+          <span class="pulse"></span>
+          Operational foundation ready
+        </div>
+      </section>
+
+      <section class="stats-grid">
+        ${topCards}
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <h3>Recent activity</h3>
+            <button class="mini-button">View all</button>
+          </div>
+
+          <ul class="activity-list">
+            ${recentActivity}
+          </ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h3>Priority focus</h3>
+            <button class="mini-button">Review</button>
+          </div>
+
+          <ul class="priority-list">
+            ${priorities}
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel full-width">
+        <div class="panel-header">
+          <h3>${platform === 'user' ? 'Customer journey' : 'Operational workflow'}</h3>
+          <button class="mini-button">Automate</button>
+        </div>
+
+        <div class="pipeline">
+          ${steps}
+        </div>
+      </section>
+
+      <section class="panel full-width">
+        <div class="panel-header">
+          <h3>Portfolio snapshot</h3>
+          <button class="mini-button">Export report</button>
+        </div>
+
+        <div class="chart">
+          <div class="chart-labels">
+            <span>Jan</span>
+            <span>Feb</span>
+            <span>Mar</span>
+            <span>Apr</span>
+            <span>May</span>
+          </div>
+          <div class="chart-bars">
+            ${bars}
+          </div>
+        </div>
+      </section>
+    </main>
+  `;
+};
+
+const setPlatform = (platform: Platform) => {
+  app.innerHTML = renderOverview(platform);
+
+  const buttons = document.querySelectorAll<HTMLButtonElement>('[data-platform]');
+  buttons.forEach((button) => {
+    button.addEventListener('click', () => {
+      setPlatform(button.dataset.platform as Platform);
+    });
+  });
+};
+
+setPlatform('user');
