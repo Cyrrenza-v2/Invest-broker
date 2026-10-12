@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { env, SELF, evictDurableObject } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import { SELF, evictDurableObject } from "cloudflare:test";
 
 const TOKEN = "unit-test-only-token";
 const headers = {
