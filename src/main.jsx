@@ -28,6 +28,17 @@ async function callUserApi(session, route, options = {}) {
   if (!response.ok) throw new Error(payload.error || "User API request failed");
   return payload.data;
 }
+async function callPaymentApi(session, route, options = {}) {
+  if (!session?.access_token || !supabaseKey) throw new Error("Sign in to continue.");
+  const response = await fetch(`${supabaseUrl}/functions/v1/payment-api/${route}`, {
+    ...options,
+    headers: { Authorization: `Bearer ${session.access_token}`, apikey: supabaseKey, "Content-Type": "application/json", ...(options.headers || {}) },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Payment API request failed");
+  return payload;
+}
+
 const navItems = [
   ["Overview", LayoutDashboard], ["My investments", BriefcaseBusiness], ["My wallet", Wallet],
   ["Profit", TrendingUp], ["Withdrawals", ArrowUpRight], ["Deposits", ArrowDownLeft],
@@ -322,7 +333,7 @@ function App() {
         {section==="My wallet"&&<WalletPage data={data} availableBalance={availableBalance} invested={invested} profitCredited={profitCredited} showBalance={showBalance} setShowBalance={setShowBalance} disabledAction={disabledAction} />}
         {section==="Profit"&&<ProfitPage ledger={postedLedger} profitCredited={profitCredited} investments={data.investments} />}
         {section==="Withdrawals"&&<Withdrawals data={data} availableBalance={availableBalance} disabledAction={disabledAction} />}
-        {section==="Deposits"&&<Deposits data={data} disabledAction={disabledAction} />}
+        {section==="Deposits"&&<Deposits data={data} disabledAction={disabledAction} session={session} />}
         {section==="Transactions"&&<Transactions ledger={data.ledger} deposits={data.deposits} withdrawals={data.withdrawals} />}
         {section==="Verification"&&<Verification profile={data.profile} bankAccounts={data.bankAccounts} />}
         {section==="Documents"&&<Documents documents={data.documents} />}
@@ -391,7 +402,54 @@ function ProfitPage({ledger,profitCredited,investments}) {
  </>;
 }
 function Withdrawals({data,availableBalance,disabledAction}) { return <><div className="metrics-grid"><Metric title="Available balance" value={displayAvailableBalance(availableBalance)} subtitle="Posted ledger entries" icon={Wallet}/><Metric title="Pending requests" value={data.withdrawals.filter(r=>["pending","under_review"].includes(r.status)).length} subtitle="Awaiting review" icon={Clock3} tone="amber"/><Metric title="Completed" value={data.withdrawals.filter(r=>r.status==="completed").length} subtitle="Provider-confirmed" icon={CheckCircle2} tone="green"/></div><Panel title="Request a withdrawal" subtitle="Secure withdrawal submission is not enabled yet"><div className="withdrawal-callout"><div className="notice-icon"><LockKeyhole size={20}/></div><div><b>Withdrawal requests are temporarily disabled</b><p>The server-side balance reservation, compliance review, approval audit and payment-provider confirmation flow must be verified before you can submit a request.</p><button className="primary-button" onClick={()=>disabledAction("Withdrawal request")}>Request withdrawal <ArrowUpRight size={15}/></button></div></div><div className="info-grid"><Info label="Available" value={displayAvailableBalance(availableBalance)}/><Info label="Primary payout account" value={data.bankAccounts.find(r=>r.is_primary)?.provider_name||"Not linked"}/><Info label="Next eligible window" value="Not configured"/></div></Panel><Panel title="Withdrawal history" subtitle="Status changes from request to provider confirmation"><Table columns={[{label:"Reference",render:r=><b>{r.withdrawal_code}</b>},{label:"Amount",render:r=>money(r.amount)},{label:"Requested",render:r=>date(r.created_at)},{label:"Status",render:r=><Status value={r.status}/>},{label:"Updated",render:r=>date(r.completed_at||r.reviewed_at||r.created_at)}]} rows={data.withdrawals}/></Panel></>; }
-function Deposits({data,disabledAction}) { return <><Panel title="Add funds" subtitle="Funding through an authorized provider only"><div className="withdrawal-callout"><div className="notice-icon"><Landmark size={20}/></div><div><b>Deposit provider is not configured</b><p>Do not transfer funds to a personal account. Deposit instructions will appear here only after an approved payment provider is connected and its verification callback is tested.</p><button className="primary-button" onClick={()=>disabledAction("Deposit")}>Start deposit <ArrowDownLeft size={15}/></button></div></div></Panel><Panel title="Deposit history" subtitle="Only provider-verified deposits should be credited"><Table columns={[{label:"Reference",render:r=><b>{r.deposit_code}</b>},{label:"Amount",render:r=>money(r.amount)},{label:"Created",render:r=>date(r.created_at)},{label:"Provider",render:r=>r.provider||"—"},{label:"Status",render:r=><Status value={r.status}/> }]} rows={data.deposits}/></Panel></>; }
+function Deposits({data,disabledAction,session}) {
+ const [provider,setProvider]=useState("paycanvas"),[amount,setAmount]=useState("100"),[currency,setCurrency]=useState("NGN");
+ const [assetSymbol,setAssetSymbol]=useState("USDT"),[network,setNetwork]=useState(""),[catalog,setCatalog]=useState([]),[intents,setIntents]=useState([]);
+ const [busy,setBusy]=useState(false),[message,setMessage]=useState(""),[error,setError]=useState("");
+ const isCrypto=provider==="crypto_wallet";
+ useEffect(()=>{let cancelled=false;if(!session?.access_token)return;
+  Promise.all([callPaymentApi(session,"catalog"),callPaymentApi(session,"intents")]).then(([c,i])=>{if(!cancelled){setCatalog(c.providers||[]);setIntents(i.data||[]);}})
+   .catch(e=>{if(!cancelled)setError(e.message||"Payment test service is unavailable.");});
+  return()=>{cancelled=true;};
+ },[session?.access_token]);
+ async function createTestIntent(e){e.preventDefault();setBusy(true);setError("");setMessage("");
+  try{
+   if(!session?.access_token)throw new Error("Sign in to create a test payment intent.");
+   const idempotencyKey="test-"+window.crypto.randomUUID();
+   const result=await callPaymentApi(session,"intents",{method:"POST",body:JSON.stringify({
+    provider,intent_type:isCrypto?"crypto_wallet":"fiat_checkout",amount:Number(amount),
+    currency:isCrypto?assetSymbol.toUpperCase():currency,asset_symbol:isCrypto?assetSymbol.toUpperCase():null,
+    network:isCrypto?network:null,idempotency_key:idempotencyKey
+   })});
+   setIntents(current=>[result.data,...current.filter(x=>x.id!==result.data?.id)]);
+   setMessage(result.message||"Test intent recorded. No payment was taken and no wallet was credited.");
+  }catch(e){setError(e.message||"Unable to create test intent.");}
+  finally{setBusy(false);}
+ }
+ return <>
+  <Panel title="Add funds" subtitle="Test mode only • no live payments or wallet credits">
+   <div className="withdrawal-callout"><div className="notice-icon"><LockKeyhole size={20}/></div><div>
+    <b>Payment providers are not yet verified</b>
+    <p>PayCanvas, PayU and direct crypto wallet deposits are registered as separate options. This screen can create a test record only: it does not open checkout, issue a receiving address, verify a blockchain transfer or credit your wallet.</p>
+   </div></div>
+   <form className="complaint-form" onSubmit={createTestIntent}>
+    <label>Payment method<select value={provider} onChange={e=>setProvider(e.target.value)}><option value="paycanvas">PayCanvas (test intent)</option><option value="payu">PayU (test intent)</option><option value="crypto_wallet">Cryptocurrency wallet (test intent)</option></select></label>
+    <label>Amount<input type="number" min="0.01" max="1000000000" step="any" value={amount} onChange={e=>setAmount(e.target.value)} required/></label>
+    {isCrypto?<><label>Crypto asset symbol<input value={assetSymbol} onChange={e=>setAssetSymbol(e.target.value.toUpperCase())} placeholder="e.g. USDT" minLength={2} maxLength={12} required/></label><label>Network<input value={network} onChange={e=>setNetwork(e.target.value)} placeholder="e.g. Ethereum, Tron (test record only)" maxLength={80} required/></label><p className="small-note">Supported assets and networks are not verified yet. Do not send cryptocurrency; no receiving address is configured.</p></>:<label>Fiat currency<select value={currency} onChange={e=>setCurrency(e.target.value)}><option value="NGN">NGN · Nigerian Naira</option><option value="USD">USD · US Dollar</option><option value="EUR">EUR · Euro</option><option value="GBP">GBP · Pound Sterling</option></select></label>}
+    <button className="primary-button" disabled={busy||!session?.access_token}>{busy?"Creating test record…":"Create test payment intent"} <ArrowDownLeft size={15}/></button>
+   </form>
+   {error&&<div className="notice-banner"><div className="notice-icon"><AlertCircle size={18}/></div><div><b>Payment test request not completed</b><p>{error}</p></div></div>}
+   {message&&<div className="notice-banner"><div className="notice-icon"><CheckCircle2 size={18}/></div><div><b>Test record created</b><p>{message}</p></div></div>}
+   <div className="info-grid">{catalog.map(item=><Info key={item.provider} label={item.display_name} value={item.integration_status.replaceAll("_"," ")+ (item.checkout_enabled?" · checkout enabled":" · disabled")}/>)}</div>
+  </Panel>
+  <Panel title="Payment intent history" subtitle="Test records only; provider verification and wallet crediting are disabled">
+   <Table columns={[{label:"Reference",render:r=><b>{r.intent_code}</b>},{label:"Method",render:r=>r.provider==="crypto_wallet"?"Crypto wallet":r.provider},{label:"Amount",render:r=>String(r.amount)+" "+r.currency},{label:"Asset / network",render:r=>r.asset_symbol?(r.asset_symbol+" · "+(r.network||"network not set")):"—"},{label:"Created",render:r=>date(r.created_at)},{label:"Status",render:r=><Status value={r.status}/>}]} rows={intents} empty="No payment test intents created yet"/>
+  </Panel>
+  <Panel title="Existing deposit history" subtitle="Only provider-verified deposits should be credited">
+   <Table columns={[{label:"Reference",render:r=><b>{r.deposit_code}</b>},{label:"Amount",render:r=>money(r.amount)},{label:"Created",render:r=>date(r.created_at)},{label:"Provider",render:r=>r.provider||"—"},{label:"Status",render:r=><Status value={r.status}/>}]} rows={data.deposits}/>
+  </Panel>
+ </>;
+}
 function Transactions({ledger,deposits,withdrawals}) { const all=[...ledger.map(r=>({...r,displayRef:r.reference,type:r.entry_type,displayAmount:r.amount})),...deposits.map(r=>({...r,displayRef:r.deposit_code,type:"deposit request",displayAmount:r.amount})),...withdrawals.map(r=>({...r,displayRef:r.withdrawal_code,type:"withdrawal request",displayAmount:-Math.abs(Number(r.amount)),currency:r.currency}))].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)); return <Panel title="Transaction history" subtitle="Ledger entries and payment requests in date order"><Table columns={[{label:"Reference",render:r=><b>{r.displayRef}</b>},{label:"Transaction",render:r=>r.type.replaceAll("_"," ")},{label:"Date",render:r=>date(r.created_at)},{label:"Amount",render:r=>money(r.displayAmount)},{label:"Status",render:r=><Status value={r.status}/>}]} rows={all}/></Panel>; }
 function Verification({profile,bankAccounts}) { return <><div className="metrics-grid"><Metric title="Identity verification" value={(profile?.kyc_status||"pending").replaceAll("_"," ")} subtitle="KYC status from your profile" icon={FileCheck2} tone="violet"/><Metric title="Account status" value={(profile?.account_status||"pending_kyc").replaceAll("_"," ")} subtitle="Platform access status" icon={ShieldCheck} tone="green"/></div><Panel title="Personal profile" subtitle="Verified account details"><div className="info-grid"><Info label="Customer ID" value={profile?.user_code||"Created after registration"}/><Info label="Full name" value={profile?.full_name||"Not provided"}/><Info label="Phone" value={profile?.phone||"Not provided"}/><Info label="KYC status" value={(profile?.kyc_status||"pending").replaceAll("_"," ")}/></div><p className="small-note"><LockKeyhole size={14}/> Personal information changes and KYC uploads require a secure verification workflow.</p></Panel><Panel title="Payout accounts" subtitle="Only masked account details are displayed"><Table columns={[{label:"Provider",key:"provider_name"},{label:"Account name",key:"account_name"},{label:"Account",render:r=>"•••• "+r.account_last4},{label:"Status",render:r=><Status value={r.status}/>},{label:"Primary",render:r=>r.is_primary?"Yes":"No"}]} rows={bankAccounts} empty="No payout account has been linked"/></Panel></>; }
 function Documents({documents}) { return <Panel title="Your documents" subtitle="Statements, confirmations and terms published to your account"><Table columns={[{label:"Document",key:"title"},{label:"Type",key:"document_type"},{label:"Version",key:"version"},{label:"Date",render:r=>date(r.created_at)},{label:"Status",render:r=><Status value={r.status}/>},{label:"Access",render:r=>r.storage_path?<span className="muted">Private file link pending</span>:"Not uploaded"}]} rows={documents} empty="No documents have been published yet"/></Panel>; }
