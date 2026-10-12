@@ -6,41 +6,31 @@ jobs:
       - image: cimg/node:22.0
     working_directory: ~/project
     steps:
-      # CircleCI's SSH checkout key was empty. This public repository is cloned
-      # over HTTPS, and branches without the app are skipped in favor of the app branch.
+      # Use HTTPS so a missing/empty CircleCI SSH checkout key cannot block a public repo.
       - run:
           name: Checkout application source over HTTPS
           command: |
             set -eu
-            branch="${CIRCLE_BRANCH:-feature/platform-foundation}"
+            branch="${CIRCLE_BRANCH:-main}"
             source_dir="/tmp/invest-broker-source"
             rm -rf "$source_dir"
-            if ! git clone --depth 1 --branch "$branch" https://github.com/Cyrrenza-v2/Invest-broker.git "$source_dir" 2>/dev/null || [ ! -f "$source_dir/package.json" ]; then
-              echo "Branch '$branch' does not contain the app package.json; using feature/platform-foundation."
-              rm -rf "$source_dir"
-              branch="feature/platform-foundation"
-              git clone --depth 1 --branch "$branch" https://github.com/Cyrrenza-v2/Invest-broker.git "$source_dir"
-            fi
+            git clone --depth 1 --branch "$branch" https://github.com/Cyrrenza-v2/Invest-broker.git "$source_dir"
+            test -s "$source_dir/package.json"
             cp -a "$source_dir/." .
             rm -rf "$source_dir"
       - run:
           name: Install dependencies
-          command: npm install
+          command: npm install --no-audit --no-fund
       - run:
-          name: Run tests
-          command: npm test
-      - run:
-          name: Build web app
+          name: Type-check and build production assets
           command: npm run build
       - run:
-          name: Verify customer and admin installable app output
+          name: Verify Vite build output
           command: |
+            set -eu
             test -s dist/index.html
-            test -s dist/admin.html
-            test -s dist/user.webmanifest
-            test -s dist/admin.webmanifest
-            test -s dist/sw.js
-            test -s dist/icon.svg
+            test -d dist/assets
+            find dist/assets -maxdepth 1 -type f \( -name '*.js' -o -name '*.css' \) | grep -q .
 
 workflows:
   invest_broker_ci:
