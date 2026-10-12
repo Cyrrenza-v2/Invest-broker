@@ -58,3 +58,20 @@ test("summarizes estimates separately and avoids adding mixed currencies", () =>
   assert.equal(mixed.totalProjectedProfit, null);
   assert.equal(mixed.mixedCurrencies, true);
 });
+
+test("does not estimate returns when both investment and plan currency are missing", () => {
+  assert.equal(getProjectedReturn({
+    principal: 1000,
+    status: "active",
+    investment_plans: { return_method: "fixed", return_rate: 12, currency: null }
+  }), null);
+});
+
+test("uses plan currency only when investment currency is absent", () => {
+  const result = getProjectedReturn({
+    principal: 1000,
+    status: "active",
+    investment_plans: { return_method: "fixed", return_rate: 12, currency: "USD" }
+  });
+  assert.equal(result.currency, "USD");
+});
