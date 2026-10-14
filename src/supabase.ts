@@ -146,6 +146,13 @@ export const supabase = {
       method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body),
     });
   },
+  async edge<T = unknown>(functionName: string, route: string, options: { method?: 'GET' | 'POST'; body?: Row; query?: string } = {}): Promise<T> {
+    const method = options.method ?? 'GET';
+    const suffix = options.query ? `?${options.query}` : '';
+    return request<T>(`/functions/v1/${encodeURIComponent(functionName)}/${encodeURIComponent(route)}${suffix}`, {
+      method, ...(method === 'POST' ? { body: JSON.stringify(options.body ?? {}) } : {}),
+    });
+  },
   async invoke<T = unknown>(functionName: string, body: Row): Promise<T> {
     return request<T>(`/functions/v1/${encodeURIComponent(functionName)}`, {
       method: 'POST', body: JSON.stringify(body),
