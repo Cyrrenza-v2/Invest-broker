@@ -89,6 +89,10 @@ async function request<T>(path: string, init: RequestInit = {}, auth = true): Pr
   return data as T;
 }
 
+export type MfaFactor = { id: string; factor_type: string; status: string; friendly_name?: string | null };
+type MfaFactorResponse = { all?: MfaFactor[]; totp?: MfaFactor[]; phone?: MfaFactor[] };
+type MfaChallenge = { id?: string; challenge_id?: string; expires_at?: string };
+
 export const supabase = {
   configured: Boolean(SUPABASE_URL && SUPABASE_ANON_KEY),
   session: getSession,
@@ -96,6 +100,21 @@ export const supabase = {
     const session = await request<AuthSession>('/auth/v1/token?grant_type=password', {
       method: 'POST', body: JSON.stringify({ email, password }),
     }, false);
+    saveSession(session);
+    return session;
+  },
+  async listMfaFactors(): Promise<MfaFactor[]> {
+    const result = await request<MfaFactorResponse>('/auth/v1/factors', { method: 'GET' });
+    return result.all ?? [...(result.totp ?? []), ...(result.phone ?? [])];
+  },
+  async challengeMfa(factorId: string): Promise<MfaChallenge> {
+    return request<MfaChallenge>(`/auth/v1/factors/${encodeURIComponent(factorId)}/challenge`, { method: 'POST', body: JSON.stringify({}) });
+  },
+  async verifyMfa(factorId: string, challengeId: string, code: string): Promise<AuthSession> {
+    const session = await request<AuthSession>(`/auth/v1/factors/${encodeURIComponent(factorId)}/verify`, {
+      method: 'POST', body: JSON.stringify({ challenge_id: challengeId, code }),
+    });
+    if (!session?.access_token || !session?.refresh_token || !session?.user) throw new SupabaseError('MFA verification did not return a valid authenticated session.');
     saveSession(session);
     return session;
   },
