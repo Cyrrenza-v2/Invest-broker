@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -27,17 +27,28 @@ jobs:
         with:
           node-version: 22
 
-      # The repository has no committed package-lock.json. Use a current npm
-      # Arborist implementation and avoid setup-node's package-lock cache path.
       - name: Update npm installer
         run: npm install --global npm@11.6.2
 
-      - name: Install dependencies
+      # Bootstrap a real lockfile once, commit it, and use reproducible installs
+      # on this and all subsequent runs. Legacy peer resolution matches the
+      # dependency resolution used by the previous successful-install attempt.
+      - name: Generate and commit missing package lock
         shell: bash
         run: |
           set -euo pipefail
-          npm --version
-          npm install --no-package-lock --legacy-peer-deps --no-audit --no-fund
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts --legacy-peer-deps --no-audit --no-fund
+            test -s package-lock.json
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "Add npm package lockfile"
+            git push origin HEAD:main
+          fi
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
 
       - name: Type-check application
         run: npx tsc --noEmit
