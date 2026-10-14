@@ -216,4 +216,19 @@ app.addEventListener('click', event => {
   }
 });
 window.addEventListener('hashchange', () => { void render(); });
+
+// Keep authenticated dashboards current when the tab is visible. This is a
+// bounded refresh fallback; financial actions remain server-authorized and
+// are never performed by this timer.
+window.setInterval(() => {
+  if (document.hidden || !d.user) return;
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) return;
+  const current = path();
+  if (current.startsWith('/user/') || current.startsWith('/admin/')) void render();
+}, 15000);
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && d.user && (path().startsWith('/user/') || path().startsWith('/admin/'))) void render();
+});
 void render();
