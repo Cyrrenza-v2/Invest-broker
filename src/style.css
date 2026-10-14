@@ -135,3 +135,28 @@ h3 { letter-spacing: -.02em; }
 .auth-page{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,520px);align-items:start;gap:42px;padding-top:42px}.auth-card{padding:clamp(23px,4vw,37px)}.auth-card h1{margin:12px 0;font-size:2rem}.auth-card form{margin-top:23px}.full-width{width:100%}.auth-switch{margin-top:20px;color:#66758b;font-size:.84rem}.auth-switch a{color:#2563eb;font-weight:800}
 @media(max-width:1050px){.app-layout{grid-template-columns:205px minmax(0,1fr)}.metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.welcome-hero{gap:20px}}
 @media(max-width:720px){.app-layout{display:block}.app-layout .sidebar{position:static;height:auto;min-height:0;padding:14px;border-right:0;border-bottom:1px solid var(--line)}.sidebar-nav{display:flex;gap:6px;overflow-x:auto;margin-top:15px;padding-bottom:3px}.menu-link{flex:0 0 auto;min-height:39px;padding:9px 12px;white-space:nowrap}.sidebar-foot{display:none}.main-panel{padding:18px 12px 26px}.topbar{align-items:flex-start;flex-direction:column;gap:13px}.top-actions{justify-content:flex-start}.account-pill{max-width:160px}.metrics-grid{gap:8px}.metric-card{padding:12px}.content-grid{grid-template-columns:1fr;gap:0}.page-section-card{padding:14px}.welcome-page,.auth-page{padding:17px 13px 28px}.welcome-head{align-items:flex-start;flex-direction:column;margin-bottom:21px}.welcome-hero{grid-template-columns:1fr;padding:23px 19px}.hero-art{min-height:235px}.welcome-features{grid-template-columns:1fr}.auth-page{display:flex;flex-direction:column;gap:23px}.auth-card{width:100%;padding:21px}.wallet-banner{align-items:flex-start;padding:18px}.wallet-currency{width:56px;height:56px;flex-basis:56px;border-radius:17px}.row-actions{flex-direction:column}}
+
+
+/* Admin CEO AI response and expanded app module polish */
+.ai-answer {
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #172033;
+  overflow-wrap: anywhere;
+}
+.ai-answer p:last-child { margin-bottom: 0; line-height: 1.65; white-space: normal; }
+.stack-form textarea { width: 100%; min-height: 104px; resize: vertical; }
+.stack-form button:disabled { opacity: .65; cursor: wait; }
+.detail-list { margin: 0; }
+.detail-list > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid #e8edf4; }
+.detail-list > div:last-child { border-bottom: 0; }
+.detail-list dt { color: #64748b; font-size: .9rem; }
+.detail-list dd { margin: 0; text-align: right; font-weight: 600; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .detail-list > div { gap: 12px; }
+  .detail-list dd { max-width: 62%; }
+  .ai-answer { padding: 14px; }
+}
