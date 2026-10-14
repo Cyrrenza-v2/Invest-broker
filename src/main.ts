@@ -1,6 +1,10 @@
 import { inject } from '@vercel/analytics';
 
-inject();
+// Initialize Vercel Web Analytics
+inject({
+  mode: import.meta.env.MODE === 'production' ? 'production' : 'development',
+  debug: import.meta.env.MODE !== 'production',
+});
 
 type Role = 'user' | 'admin';
 type Route =
