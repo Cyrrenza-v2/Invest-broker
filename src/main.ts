@@ -65,6 +65,8 @@ if (!app) {
   throw new Error('App root not found');
 }
 
+const PORTAL_ROLE: Role = import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
+
 const defaultState: AppState = {
   users: seedUsers,
   activeUserId: null,
@@ -182,52 +184,66 @@ const sidebar = (role: Role) => {
   `;
 };
 
-const renderWelcome = () => `
+const renderWelcome = () => PORTAL_ROLE === 'admin' ? `
+  <main class="page-shell compact-shell">
+    <header class="topbar shell-pad">
+      <div class="brand-wrap">
+        <div class="brand-mark">IB</div>
+        <div>
+          <p class="eyebrow">Invest Broker · Private</p>
+          <h1>Administration portal</h1>
+        </div>
+      </div>
+      <span class="chip chip-blue">Admin workspace</span>
+    </header>
+    <section class="hero-panel hero-split shell-pad">
+      <div>
+        <p class="eyebrow accent">Restricted operations</p>
+        <h2>Manage platform operations from a dedicated admin app.</h2>
+        <p>Review demo KYC queues, approvals, user management, and treasury screens. This preview uses browser-only sample data and is not connected to real money or production authentication.</p>
+      </div>
+      <div class="stacked-actions">
+        <button class="secondary" data-action="route" data-route="/login/admin">Admin sign in</button>
+      </div>
+    </section>
+    <p class="eyebrow" style="text-align:center;margin-top:22px">Demo preview only · no real financial operations</p>
+  </main>
+` : `
   <main class="page-shell">
     <header class="topbar shell-pad">
       <div class="brand-wrap">
         <div class="brand-mark">IB</div>
         <div>
           <p class="eyebrow">Invest Broker</p>
-          <h1>Platform foundation</h1>
+          <h1>Customer portal</h1>
         </div>
       </div>
+      <span class="chip chip-green">Client app</span>
     </header>
-
     <section class="hero-panel hero-split shell-pad">
       <div>
-        <p class="eyebrow accent">Unified investment platform</p>
-        <h2>Secure wealth operations for customers and teams.</h2>
-        <p>Launch a user platform and a private admin workspace with a shared core: onboarding, KYC, wallet, investments, approvals, treasury, and audit workflows.</p>
+        <p class="eyebrow accent">Your investment workspace</p>
+        <h2>Track your portfolio and account journey in one place.</h2>
+        <p>Sign in to view the customer dashboard, explore the sample marketplace, and review onboarding screens. This preview uses browser-only sample data and does not process deposits or withdrawals.</p>
       </div>
       <div class="stacked-actions">
-        <button class="primary" data-action="route" data-route="/login/user">User login</button>
-        <button class="secondary" data-action="route" data-route="/login/admin">Admin login</button>
+        <button class="primary" data-action="route" data-route="/login/user">User sign in</button>
         <button class="ghost" data-action="route" data-route="/register/user">Create user account</button>
       </div>
     </section>
-
     <section class="feature-grid shell-pad">
       <article class="card feature-card">
-        <span class="chip chip-green">User side</span>
-        <h3>Customer journey</h3>
-        <ul>
-          <li>Registration and verification</li>
-          <li>Wallet, investments, returns</li>
-          <li>Deposits, withdrawals, support</li>
-        </ul>
+        <span class="chip chip-green">Customer journey</span>
+        <h3>Your portfolio</h3>
+        <ul><li>Account and portfolio overview</li><li>Sample investment marketplace</li><li>KYC status and activity screens</li></ul>
       </article>
-
       <article class="card feature-card">
-        <span class="chip chip-blue">Admin side</span>
-        <h3>Manager workspace</h3>
-        <ul>
-          <li>User management and KYC review</li>
-          <li>Approvals and audit trails</li>
-          <li>Treasury movement controls</li>
-        </ul>
+        <span class="chip chip-blue">Private operations</span>
+        <h3>Separate admin app</h3>
+        <p>The administration workspace is published at its own URL and is not linked from this customer portal.</p>
       </article>
     </section>
+    <p class="eyebrow" style="text-align:center;margin-top:22px">Demo preview only · no real financial operations</p>
   </main>
 `;
 
@@ -653,6 +669,10 @@ const handleAuthSubmit = (event: SubmitEvent) => {
   const formData = new FormData(form);
   const role = form.dataset.role as Role;
   const mode = form.dataset.mode as 'login' | 'register';
+  if (role !== PORTAL_ROLE || (role === 'admin' && mode === 'register')) {
+    alert('This action is not available in this portal.');
+    return;
+  }
   const state = readState();
 
   const email = String(formData.get('email') ?? '').trim();
@@ -696,6 +716,8 @@ const handleAuthSubmit = (event: SubmitEvent) => {
 
 const handleAction = (action: string, route?: string, plan?: string) => {
   if (action === 'route' && route) {
+    if ((route.startsWith('/user') || route === '/login/user' || route === '/register/user') && PORTAL_ROLE !== 'user') return;
+    if ((route.startsWith('/admin') || route === '/login/admin' || route === '/register/admin') && PORTAL_ROLE !== 'admin') return;
     if (route.startsWith('/user') && !requireLogin('user')) return;
     if (route.startsWith('/admin') && !requireLogin('admin')) return;
     navigate(route as Route);
@@ -735,13 +757,22 @@ const renderApp = () => {
   const route = getRouteFromHash();
   const activeUser = getActiveUser();
 
+  if (PORTAL_ROLE === 'user' && (route.startsWith('/admin') || route === '/login/admin' || route === '/register/admin')) {
+    navigate('/login/user');
+    return;
+  }
+  if (PORTAL_ROLE === 'admin' && (route.startsWith('/user') || route === '/login/user' || route === '/register/user')) {
+    navigate('/login/admin');
+    return;
+  }
+
   if (route.startsWith('/user') && (!activeUser || activeUser.role !== 'user')) {
-    app.innerHTML = renderWelcome();
+    app.innerHTML = renderAuthPage('user', 'login');
     return;
   }
 
   if (route.startsWith('/admin') && (!activeUser || activeUser.role !== 'admin')) {
-    app.innerHTML = renderWelcome();
+    app.innerHTML = renderAuthPage('admin', 'login');
     return;
   }
 
