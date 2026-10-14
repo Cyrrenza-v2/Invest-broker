@@ -7,7 +7,8 @@ type RecordRow = Row & { id?: string; user_id?: string; currency?: string; statu
 type AppData = { user: SupabaseUser | null; profile: Profile | null; users: Profile[]; plans: RecordRow[]; wallets: RecordRow[]; adminWallets: RecordRow[]; adminPlans: RecordRow[]; returns: RecordRow[]; investments: RecordRow[]; transactions: RecordRow[]; deposits: RecordRow[]; withdrawals: RecordRow[]; treasury: RecordRow[]; compliance: RecordRow[]; audits: RecordRow[]; summary: Row; aiAnswer: string; aiModel: string; error: string; notice: string };
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root not found');
-const ROLE: Role = import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
+const host = location.hostname.toLowerCase();
+const ROLE: Role = import.meta.env.VITE_APP_ROLE === 'admin' || (!import.meta.env.VITE_APP_ROLE && (host === 'invest-broker-19np.vercel.app' || host.startsWith('invest-broker-19np-'))) ? 'admin' : 'user';
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let sequence = 0;
 const e = (v: unknown): string => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
