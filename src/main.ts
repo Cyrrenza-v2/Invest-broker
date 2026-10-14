@@ -146,7 +146,7 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
     if (form.dataset.mode === 'register') {
       if (ROLE !== 'user') throw new Error('Admin registration is disabled.');
       await supabase.signUp(email,password,String(values.get('full_name') || '').trim());
-      if (!supabase.session()) { go('/login/user'); d.notice = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; return; }
+      if (!supabase.session()) { app!.innerHTML = authPage('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
       d.user = await supabase.currentUser(); go('/user/dashboard'); return;
     }
     let session = await supabase.signIn(email,password); let user = session.user;
