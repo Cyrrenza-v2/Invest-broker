@@ -1,809 +1,219 @@
 import { inject } from '@vercel/analytics';
+import { isAdmin, supabase, type Profile, type Row, type SupabaseUser } from './supabase';
 
-// Initialize Vercel Web Analytics
-inject({
-  mode: import.meta.env.MODE === 'production' ? 'production' : 'development',
-  debug: import.meta.env.MODE !== 'production',
-});
-
+inject({ mode: import.meta.env.MODE === 'production' ? 'production' : 'development', debug: import.meta.env.MODE !== 'production' });
 type Role = 'user' | 'admin';
-type Route =
-  | '/welcome'
-  | '/login/user'
-  | '/login/admin'
-  | '/register/user'
-  | '/register/admin'
-  | '/user/dashboard'
-  | '/user/marketplace'
-  | '/user/kyc'
-  | '/admin/dashboard'
-  | '/admin/users'
-  | '/admin/approvals'
-  | '/admin/treasury';
-
-type KycStatus = 'not-started' | 'pending' | 'approved' | 'rejected';
-
-type User = {
-  id: string;
-  name: string;
-  email: string;
-  password: string;
-  role: Role;
-  kycStatus: KycStatus;
-  walletBalance: number;
-  invested: number;
-  pendingWithdrawals: number;
-};
-
-type AppState = {
-  users: User[];
-  activeUserId: string | null;
-};
-
-const STORAGE_KEY = 'invest-broker-app-state-v1';
-
-const seedUsers: User[] = [
-  {
-    id: 'user-01',
-    name: 'Ada Okafor',
-    email: 'user@investbroker.ng',
-    password: 'password123',
-    role: 'user',
-    kycStatus: 'approved',
-    walletBalance: 18420290,
-    invested: 12800000,
-    pendingWithdrawals: 2640000,
-  },
-  {
-    id: 'admin-01',
-    name: 'Mary James',
-    email: 'admin@investbroker.ng',
-    password: 'admin123',
-    role: 'admin',
-    kycStatus: 'approved',
-    walletBalance: 0,
-    invested: 0,
-    pendingWithdrawals: 0,
-  },
-];
-
-const app = document.querySelector('#app');
-
-if (!app) {
-  throw new Error('App root not found');
+type RecordRow = Row & { id?: string; user_id?: string; currency?: string; status?: string; created_at?: string; amount?: number; debit_amount?: number; credit_amount?: number; description?: string; entry_type?: string; principal?: number; investment_code?: string; deposit_code?: string; withdrawal_code?: string; name?: string; full_name?: string; user_code?: string; approval_status?: string; account_status?: string; kyc_status?: string };
+type AppData = { user: SupabaseUser | null; profile: Profile | null; users: Profile[]; plans: RecordRow[]; wallets: RecordRow[]; adminWallets: RecordRow[]; adminPlans: RecordRow[]; returns: RecordRow[]; investments: RecordRow[]; transactions: RecordRow[]; deposits: RecordRow[]; withdrawals: RecordRow[]; treasury: RecordRow[]; compliance: RecordRow[]; audits: RecordRow[]; summary: Row; aiAnswer: string; aiModel: string; error: string; notice: string };
+const app = document.querySelector<HTMLDivElement>('#app');
+if (!app) throw new Error('App root not found');
+const host = location.hostname.toLowerCase();
+const isAdminHost = host === 'invest-broker-19np.vercel.app' || host.startsWith('invest-broker-19np-');
+const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
+const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
+let sequence = 0;
+const e = (v: unknown): string => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
+const date = (v: unknown) => v ? new Date(String(v)).toLocaleString() : '—';
+const money = (v: unknown, c = 'USD') => Number.isFinite(Number(v)) ? new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 2 }).format(Number(v)) : '—';
+const status = (v: unknown) => { const s = String(v || 'unknown'); const t = ['approved','active','verified','posted','completed','confirmed'].includes(s) ? 'good' : ['rejected','suspended','failed','frozen'].includes(s) ? 'bad' : 'pending'; return '<span class="tag tag-' + t + '">' + e(s.replace(/_/g, ' ')) + '</span>'; };
+const path = () => location.hash.replace(/^#/, '') || '/welcome';
+const go = (p: string) => { location.hash = p; };
+const err = (x: unknown) => x instanceof Error ? x.message : 'Unexpected error';
+async function edge<T>(fn: string, endpoint: string, method: 'GET'|'POST' = 'GET', body?: Row, query?: string): Promise<T> {
+  const r = await supabase.edge<{data:T}|T>(fn, endpoint, { method, body, query });
+  return r && typeof r === 'object' && 'data' in r ? (r as {data:T}).data : r as T;
 }
-
-const PORTAL_ROLE: Role = import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
-
-const defaultState: AppState = {
-  users: seedUsers,
-  activeUserId: null,
-};
-
-const readState = (): AppState => {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
-    return defaultState;
+function table(head: string[], rows: string[][], empty = 'No records found.') {
+  return '<div class="table-wrap"><table class="data-table"><thead><tr>' + head.map(x => '<th>' + e(x) + '</th>').join('') + '</tr></thead><tbody>' +
+    (rows.length ? rows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') : '<tr><td class="empty-cell" colspan="' + head.length + '">' + e(empty) + '</td></tr>') + '</tbody></table></div>';
+}
+function panel(title: string, body: string, sub = 'Invest Broker') {
+  return '<section class="page-section-card"><div class="section-heading"><div><p class="eyebrow">' + e(sub) + '</p><h3>' + e(title) + '</h3></div><button class="ghost small" data-action="refresh">Refresh</button></div>' + body + '</section>';
+}
+function metrics(rows: Array<[string,string,string]>) {
+  return '<section class="metrics-grid">' + rows.map(r => '<article class="metric-card"><p>' + e(r[0]) + '</p><h3>' + e(r[1]) + '</h3><span>' + e(r[2]) + '</span></article>').join('') + '</section>';
+}
+const userLinks = [['/user/dashboard','Overview'],['/user/investments','Investments'],['/user/wallet','USD Wallet'],['/user/deposit','Deposit'],['/user/withdraw','Withdraw'],['/user/transactions','Transactions'],['/user/notifications','Notifications'],['/user/kyc','KYC'],['/user/profile','Profile'],['/user/security','Security'],['/user/support','Support']];
+const adminLinks = [['/admin/dashboard','Dashboard'],['/admin/users','Customers'],['/admin/approvals','Approvals'],['/admin/wallets','Wallets'],['/admin/investments','Investments'],['/admin/investment-plans','Investment plans'],['/admin/profit-management','Profit management'],['/admin/deposits','Deposits'],['/admin/withdrawals','Withdrawals'],['/admin/treasury','Treasury'],['/admin/compliance','Compliance'],['/admin/ai-assistant','AI assistant'],['/admin/reports','Reports'],['/admin/audit-logs','Audit logs'],['/admin/settings','Settings']];
+function title(p: string) {
+  const names: Record<string,string> = {'/user/dashboard':'Your account overview','/user/investments':'Investment plans and portfolio','/user/wallet':'USD wallet','/user/deposit':'Deposit history','/user/withdraw':'Withdrawal history','/user/transactions':'Transaction history','/user/notifications':'Notifications','/user/kyc':'Identity and KYC','/user/profile':'Your profile','/user/security':'Security and sessions','/user/support':'Customer support','/admin/dashboard':'Operations dashboard','/admin/users':'Customer management','/admin/approvals':'Account approval queue','/admin/wallets':'Wallet register','/admin/investments':'Investment oversight','/admin/investment-plans':'Investment plan management','/admin/profit-management':'Profit and returns ledger','/admin/deposits':'Deposit records','/admin/withdrawals':'Withdrawal records','/admin/treasury':'Treasury accounts','/admin/compliance':'Compliance cases','/admin/ai-assistant':'Admin AI assistant','/admin/reports':'Operations reports','/admin/settings':'Platform settings','/admin/audit-logs':'Audit trail'};
+  return names[p] || 'Invest Broker';
+}
+function shell(body: string, active: string) {
+  const links = ROLE === 'user' ? userLinks : adminLinks;
+  return '<div class="app-layout"><aside class="sidebar"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer workspace' : 'Admin CEO workspace') + '</small></span></a><nav class="sidebar-nav">' +
+    links.map(l => '<a class="menu-link ' + (active === l[0] ? 'is-active' : '') + '" href="#' + l[0] + '">' + l[1] + '</a>').join('') +
+    '</nav><div class="sidebar-foot"><span class="live-dot"></span> Authenticated workspace</div></aside><main class="main-panel"><header class="topbar"><div><p class="eyebrow">' + (ROLE === 'user' ? 'Customer portal' : 'Restricted operations') + '</p><h1>' + e(title(active)) + '</h1></div><div class="top-actions"><span class="account-pill">' + e(d.profile?.full_name || d.user?.email || 'Account') + '</span><button class="ghost" data-action="refresh">Refresh</button><button class="ghost" data-action="logout">Sign out</button></div></header>' +
+    (d.error ? '<div class="notice notice-error">' + e(d.error) + '</div>' : '') + (d.notice ? '<div class="notice notice-info">' + e(d.notice) + '</div>' : '') + body +
+    '<footer class="app-footer">Account records are returned by Supabase-authenticated APIs. No demo financial balances are substituted.</footer></main></div>';
+}
+function welcome() {
+  return '<main class="welcome-page"><header class="welcome-head"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>Secure investment workspace</small></span></a><span class="secure-label">Supabase-backed access</span></header><section class="welcome-hero"><div class="hero-copy"><p class="eyebrow">' + (ROLE === 'user' ? 'Your account, clearly presented' : 'Private operations console') + '</p><h1>' + (ROLE === 'user' ? 'A clearer view of your investment journey.' : 'Run operations with clear controls.') + '</h1><p>' + (ROLE === 'user' ? 'Sign in to see your account profile, USD wallet availability, investments, and ledger activity.' : 'Review customer applications, investments, deposits, withdrawals, treasury, compliance, and audit information.') + '</p><div class="hero-actions"><button class="primary" data-action="route" data-route="' + (ROLE === 'user' ? '/login/user' : '/login/admin') + '">Sign in</button>' + (ROLE === 'user' ? '<button class="ghost" data-action="route" data-route="/register/user">Create customer account</button>' : '') + '</div><p class="small-text muted">No simulated balances, payments, or approvals.</p></div><div class="hero-art"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-card"><span class="art-icon">IB</span><small>ACCOUNT SECURITY</small><strong>Authenticated access</strong><span class="art-line"></span><span class="art-line short"></span><div class="art-footer"><span>Supabase Auth</span><span class="live-dot"></span></div></div></div></section><section class="welcome-features"><article><span>01</span><h3>' + (ROLE === 'user' ? 'Your account data' : 'Customer oversight') + '</h3><p>Data is fetched after authentication and filtered by backend permissions.</p></article><article><span>02</span><h3>' + (ROLE === 'user' ? 'USD-only display' : 'Ledger-aware controls') + '</h3><p>' + (ROLE === 'user' ? 'NGN wallet records are never converted or presented as USD.' : 'Money movement remains server-authorized; this interface does not post ledger entries.') + '</p></article><article><span>03</span><h3>Clear status</h3><p>Pending access or backend errors are shown without inventing a success.</p></article></section></main>';
+}
+function authPage(mode: 'login'|'register') {
+  return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer portal' : 'Admin CEO portal') + '</small></span></a><section class="auth-card"><p class="eyebrow">' + (ROLE === 'user' ? 'Customer access' : 'Restricted administrator access') + '</p><h1>' + (mode === 'login' ? 'Welcome back' : 'Create your account') + '</h1><p class="muted">' + (mode === 'login' ? 'Sign in using your Supabase account.' : 'New accounts remain pending administrator approval.') + '</p><form data-form="auth" data-mode="' + mode + '">' +
+    (mode === 'register' ? '<label>Full name<input name="full_name" autocomplete="name" required maxlength="120" placeholder="Your full name"></label>' : '') +
+    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
+    (mode === 'login' && ROLE === 'user' ? 'New here? <a href="#/register/user">Create an account</a>' : mode === 'register' ? '<a href="#/login/user">Already registered? Sign in</a>' : '<a href="#/welcome">Back to welcome</a>') +
+    '</p><p class="small-text muted">Admin access comes from trusted server-side role metadata, never from a form selection.</p></section></main>';
+}
+function pendingPage() {
+  return '<section class="state-card"><div class="state-symbol">…</div><p class="eyebrow">Application status</p><h2>' + (d.profile?.approval_status === 'rejected' ? 'Application not approved' : 'Waiting for account approval') + '</h2><p>Account access requires approval and activation by an authorized administrator.</p><div class="status-row"><span>Approval</span>' + status(d.profile?.approval_status) + '</div><div class="status-row"><span>Account</span>' + status(d.profile?.account_status) + '</div><button class="ghost" data-action="refresh">Check status</button><button class="ghost" data-action="logout">Sign out</button></section>';
+}
+async function loadUser() {
+  d.profile = await edge<Profile>('user-api','profile');
+  if (d.profile.approval_status !== 'approved' || d.profile.account_status !== 'active') return;
+  const values = await Promise.all([
+    edge<RecordRow|null>('user-api','wallet').catch(() => null),
+    edge<RecordRow[]>('user-api','investment-plans').catch(() => []),
+    edge<RecordRow[]>('user-api','investments').catch(() => []),
+    edge<RecordRow[]>('user-api','transactions').catch(() => []),
+    edge<RecordRow[]>('user-api','deposits').catch(() => []),
+    edge<RecordRow[]>('user-api','withdrawals').catch(() => []),
+  ]);
+  d.wallets = values[0] ? [values[0]] : []; d.plans = values[1] || []; d.investments = values[2] || []; d.transactions = values[3] || []; d.deposits = values[4] || []; d.withdrawals = values[5] || [];
+}
+async function loadAdmin() {
+  const values = await Promise.all([
+    edge<Row>('admin-api','dashboard'),
+    edge<Profile[]>('admin-api','users','GET',undefined,'limit=200'),
+    edge<RecordRow[]>('admin-api','investments','GET',undefined,'limit=200'),
+    edge<RecordRow[]>('admin-api','deposits','GET',undefined,'limit=200'),
+    edge<RecordRow[]>('admin-api','withdrawals','GET',undefined,'limit=200'),
+    edge<RecordRow[]>('admin-api','treasury','GET',undefined,'limit=200'),
+    edge<RecordRow[]>('admin-api','compliance','GET',undefined,'limit=200'),
+    edge<RecordRow[]>('admin-api','audit-logs','GET',undefined,'limit=100'),
+    edge<RecordRow[]>('admin-api','wallets','GET',undefined,'limit=300'),
+    edge<RecordRow[]>('admin-api','investment-plans','GET',undefined,'limit=200'),
+    edge<RecordRow[]>('admin-api','returns','GET',undefined,'limit=300'),
+  ]);
+  d.summary = values[0] || {}; d.users = values[1] || []; d.investments = values[2] || []; d.deposits = values[3] || []; d.withdrawals = values[4] || []; d.treasury = values[5] || []; d.compliance = values[6] || []; d.audits = values[7] || []; d.adminWallets = values[8] || []; d.adminPlans = values[9] || []; d.returns = values[10] || [];
+}
+function userContent(p: string): string {
+  if (p === '/user/dashboard') {
+    const w = d.wallets.find(x => x.currency === 'USD');
+    const tx = d.transactions.filter(x => x.currency === 'USD' && x.status === 'posted');
+    return metrics([['Account status',String(d.profile?.account_status || '—'),'Approval: ' + String(d.profile?.approval_status || 'unknown')],['USD wallet',w ? String(w.status || 'available') : 'Not provisioned',w ? 'USD only · no FX conversion' : 'No USD wallet; NGN is not converted'],['Investment records',String(d.investments.length),'From your account API'],['Posted USD entries',String(tx.length),'Posted activity, not a balance estimate']]) +
+      '<div class="content-grid">' + panel('Recent USD ledger activity',table(['Type','Description','Status','Created'],tx.slice(0,6).map(x => [e(x.entry_type),e(x.description || 'Ledger entry'),status(x.status),e(date(x.created_at))]),'No posted USD entries.')) +
+      panel('Account profile','<dl class="detail-list"><div><dt>Customer code</dt><dd>' + e(d.profile?.user_code || '—') + '</dd></div><div><dt>Name</dt><dd>' + e(d.profile?.full_name || '—') + '</dd></div><div><dt>Email</dt><dd>' + e(d.user?.email || '—') + '</dd></div><div><dt>KYC</dt><dd>' + status(d.profile?.kyc_status) + '</dd></div></dl>') + '</div><div class="notice notice-info">Projected returns are not credited profit. Only posted ledger entries count as recorded activity.</div>';
   }
-
+  if (p === '/user/investments') return panel('Available investment plans',table(['Plan','Currency','Minimum','Maximum','Term','Return terms'],d.plans.map(x => [e(x.name),e(x.currency),e(money(x.minimum_amount,String(x.currency || 'USD'))),e(x.maximum_amount == null ? 'No maximum listed' : money(x.maximum_amount,String(x.currency || 'USD'))),e(String(x.duration_days || '—') + ' days'),e(String(x.return_rate || 0) + '% · ' + String(x.return_method || '—'))]),'No active plans published.')) + panel('Your investments',table(['Reference','Principal','Currency','Status','Maturity'],d.investments.map(x => [e(x.investment_code || x.id),e(money(x.principal,x.currency || 'USD')),e(x.currency),status(x.status),e(date(x.maturity_at))]),'No investments found.')) + '<div class="notice notice-info">Plan terms are not earned profit. Investment placement is disabled until the secure placement endpoint is enabled.</div>';
+  if (p === '/user/wallet') {
+    const w = d.wallets.find(x => x.currency === 'USD');
+    return '<section class="wallet-banner"><div><p class="eyebrow">USD wallet</p><h2>' + e(w ? w.wallet_code || 'Wallet provisioned' : 'No USD wallet found') + '</h2><p>' + (w ? 'USD wallet metadata is available. No balance is inferred in the browser.' : 'A USD wallet must be provisioned by the backend. NGN funds are never converted to USD.') + '</p></div><div class="wallet-currency">USD</div></section>' + panel('USD ledger activity',table(['Type','Description','Amount','Status','Date'],d.transactions.filter(x => x.currency === 'USD').map(x => [e(x.entry_type),e(x.description || '—'),e(money(x.amount,'USD')),status(x.status),e(date(x.created_at))]),'No USD ledger entries.'));
+  }
+  if (p === '/user/deposit') return panel('Deposit history',table(['Reference','Amount','Currency','Status','Created'],d.deposits.map(x => [e(x.deposit_code || x.id),e(money(x.amount,x.currency || 'USD')),e(x.currency || '—'),status(x.status),e(date(x.created_at))]),'No deposit records.')) + '<div class="notice notice-info">New deposit instructions are unavailable until a payment provider is verified and connected. No funds are credited from a browser action.</div>';
+  if (p === '/user/withdraw') return panel('Withdrawal history',table(['Reference','Amount','Currency','Status','Created'],d.withdrawals.map(x => [e(x.withdrawal_code || x.id),e(money(x.amount,x.currency || 'USD')),e(x.currency || '—'),status(x.status),e(date(x.created_at))]),'No withdrawal records.')) + '<div class="notice notice-info">Withdrawal requests remain disabled until eligibility checks, approval, and provider settlement are implemented server-side.</div>';
+  if (p === '/user/notifications') return panel('Notifications','<p class="muted">No notification feed is currently exposed by the user API. This page will display verified account, deposit, withdrawal, KYC, and security updates once the backend endpoint is enabled.</p>');
+  if (p === '/user/profile') return panel('Profile details','<dl class="detail-list"><div><dt>Full name</dt><dd>' + e(d.profile?.full_name || '—') + '</dd></div><div><dt>Email</dt><dd>' + e(d.user?.email || '—') + '</dd></div><div><dt>Customer code</dt><dd>' + e(d.profile?.user_code || '—') + '</dd></div><div><dt>Account status</dt><dd>' + status(d.profile?.account_status) + '</dd></div><div><dt>Approval</dt><dd>' + status(d.profile?.approval_status) + '</dd></div><div><dt>KYC</dt><dd>' + status(d.profile?.kyc_status) + '</dd></div></dl>') + '<div class="notice notice-info">Profile editing is disabled until a validated profile-update endpoint is available.</div>';
+  if (p === '/user/security') return metrics([['Signed in','Yes','Supabase authenticated session'],['Role','Customer','Admin privileges are server-controlled'],['Session storage','This browser','Sign out to clear this device session']]) + panel('Security guidance','<ul class="clean-list"><li>Use a unique password and keep it private.</li><li>Sign out on shared devices.</li><li>Admin CEO access requires trusted administrator metadata and verified MFA (AAL2).</li><li>Password reset and session management controls are not yet exposed by the current API.</li></ul>');
+  if (p === '/user/transactions') return panel('Ledger activity',table(['Type','Description','Amount','Currency','Status','Date'],d.transactions.map(x => [e(x.entry_type),e(x.description || '—'),e(money(x.amount,x.currency || 'USD')),e(x.currency),status(x.status),e(date(x.created_at))]),'No transaction records.'));
+  if (p === '/user/kyc') return metrics([['KYC status',String(d.profile?.kyc_status || '—'),'Profile record'],['Approval',String(d.profile?.approval_status || '—'),'Admin-reviewed access gate']]) + panel('Identity verification','<p>Current KYC status: ' + status(d.profile?.kyc_status) + '</p><p class="muted">Document upload is not enabled until a private storage bucket and upload policies are verified. Do not submit identity documents through unsecured forms.</p>');
+  if (p === '/user/support') return panel('Contact support','<form data-form="support" class="stack-form"><label>Subject<input name="subject" required maxlength="200" placeholder="How can we help?"></label><label>Message<textarea name="body" required maxlength="10000" rows="5" placeholder="Describe your question"></textarea></label><button class="primary" type="submit">Send support message</button></form>','Secure message');
+  return userContent('/user/dashboard');
+}
+function adminContent(p: string): string {
+  if (p === '/admin/dashboard') return metrics([['Customer profiles',String(d.summary.users ?? d.users.length),'Protected admin API'],['Pending approvals',String(d.users.filter(x => x.approval_status === 'pending').length),'Requires review'],['Investment records',String(d.investments.length),'Returned records'],['Treasury accounts',String(d.treasury.length),'No balance inferred']]) + '<div class="content-grid">' + panel('Operations snapshot',table(['Metric','Count'],[['Active/matured investments',e(d.summary.activeOrMaturedInvestments ?? '—')],['Pending deposits',e(d.summary.pendingDeposits ?? d.deposits.filter(x => ['pending','processing'].includes(String(x.status))).length)],['Pending withdrawals',e(d.summary.pendingWithdrawals ?? d.withdrawals.filter(x => ['pending','under_review'].includes(String(x.status))).length)],['Open compliance cases',e(d.summary.openComplianceCases ?? '—')]])) + panel('Safety controls','<ul class="clean-list"><li>Customer approval is processed through the admin API.</li><li>Payment settlement and ledger posting stay server-authorized.</li><li>Admin data is protected by JWT role metadata and database policies.</li><li>No balances are calculated from unverified or cross-currency data.</li></ul>') + '</div>';
+  if (p === '/admin/wallets') return panel('Customer wallet register',table(['Wallet','Customer ID','Currency','Status','Created'],d.adminWallets.map(x => [e(x.wallet_code || x.id),e(x.user_id || '—'),e(x.currency || '—'),status(x.status),e(date(x.created_at))]),'No wallet records returned.')) + '<div class="notice notice-info">USD and NGN wallets are shown as separate records. This register does not calculate balances or convert currencies.</div>';
+  if (p === '/admin/investment-plans') return panel('Published investment plans',table(['Plan','Currency','Minimum','Maximum','Term','Return terms','Status'],d.adminPlans.map(x => [e(x.name),e(x.currency || '—'),e(money(x.minimum_amount,x.currency || 'USD')),e(x.maximum_amount == null ? 'No maximum' : money(x.maximum_amount,x.currency || 'USD')),e(String(x.duration_days || '—') + ' days'),e(String(x.return_rate ?? '—') + '% · ' + String(x.return_method || '—')),status(x.is_active ? 'active' : 'inactive')]),'No investment plans returned.')) + '<div class="notice notice-info">Plan editing is read-only until a server-authorized plan-management operation is available.</div>';
+  if (p === '/admin/profit-management') return panel('Posted return ledger',table(['Entry type','User ID','Amount','Currency','Status','Reference','Posted'],d.returns.map(x => [e(x.entry_type || '—'),e(x.user_id || '—'),e(money(x.amount,x.currency || 'USD')),e(x.currency || '—'),status(x.status),e(x.reference || '—'),e(date(x.posted_at || x.created_at))]),'No return ledger entries returned.')) + '<div class="notice notice-info">Only posted ledger entries count as recorded returns. Projected plan returns are not profit credits. No profit can be created from this screen.</div>';
+  if (p === '/admin/reports') return metrics([['Customers',String(d.summary.users ?? d.users.length),'Aggregate API count'],['Investments',String(d.investments.length),'Returned records'],['Pending deposits',String(d.summary.pendingDeposits ?? d.deposits.filter(x => ['pending','processing'].includes(String(x.status))).length),'Operational queue'],['Pending withdrawals',String(d.summary.pendingWithdrawals ?? d.withdrawals.filter(x => ['pending','under_review'].includes(String(x.status))).length),'Operational queue']]) + panel('Reporting scope','<ul class="clean-list"><li>Reports use records returned by the protected admin API.</li><li>Amounts are not aggregated across different currencies.</li><li>Financial reconciliation exports are not enabled in this UI.</li></ul>');
+  if (p === '/admin/settings') return panel('Platform safety settings','<ul class="clean-list"><li>Customer and admin applications are separate deployments.</li><li>Admin API requires trusted role metadata, active account checks, and verified session assurance.</li><li>Money movement must remain server-authorized and audited.</li><li>Customer wallet display is USD-only; admin wallets preserve each original currency.</li><li>Payment providers and production financial mutations must be verified before enabling.</li></ul>') + '<div class="notice notice-info">Configuration changes are not available in the browser. Manage secrets only in the backend provider dashboard.</div>';
+  if (p === '/admin/ai-assistant') return panel('Read-only operations assistant','<p class="muted">Ask for an operational summary or a recommendation. The assistant receives aggregate counts only and cannot move money or change account state.</p><form data-form="admin-ai" class="stack-form"><label>Your question<textarea name="question" rows="3" maxlength="1200" required placeholder="Summarize current operational risks"></textarea></label><button class="primary" type="submit">Ask Admin AI</button></form>' + (d.aiAnswer ? '<div class="ai-answer"><p class="eyebrow">Assistant response · ' + e(d.aiModel || 'read-only') + '</p><p>' + e(d.aiAnswer).replace(/\n/g,'<br>') + '</p></div>' : '') + '<div class="notice notice-info">Requires administrator authorization, verified MFA (AAL2), and the server-side OPENAI_API_KEY secret.</div>');
+  if (p === '/admin/users') return panel('Customer accounts',table(['Customer','Code','KYC','Account','Approval','Created'],d.users.map(x => [e(x.full_name || 'Unnamed customer'),e(x.user_code || '—'),status(x.kyc_status),status(x.account_status),status(x.approval_status),e(date(x.created_at))]),'No customer profiles returned.'));
+  if (p === '/admin/approvals') return panel('Pending applications',table(['Name','Customer code','Submitted','Action'],d.users.filter(x => x.approval_status === 'pending').map(x => [e(x.full_name || 'Unnamed customer'),e(x.user_code || x.id),e(date(x.created_at)),'<div class="row-actions"><button class="primary small" data-action="review-user" data-user-id="' + e(x.id) + '" data-review="approve">Approve</button><button class="danger small" data-action="review-user" data-user-id="' + e(x.id) + '" data-review="reject">Reject</button></div>']),'No pending applications.')) + '<p class="muted small-text">Approval is recorded by the protected admin API and does not credit funds.</p>';
+  if (['/admin/investments','/admin/deposits','/admin/withdrawals'].includes(p)) {
+    const kind = p.split('/')[2]; const rows = d[kind as 'investments'|'deposits'|'withdrawals'] || [];
+    return panel(kind[0].toUpperCase()+kind.slice(1)+' records',table(['Reference','User ID','Amount','Currency','Status','Date'],rows.map(x => [e(x.investment_code || x.deposit_code || x.withdrawal_code || x.id),e(x.user_id || '—'),e(money(x.principal ?? x.amount,x.currency || 'USD')),e(x.currency),status(x.status),e(date(x.maturity_at || x.created_at))]),'No records returned.')) + '<div class="notice notice-info">Read-only view. The current API does not expose deposit settlement or withdrawal approval actions.</div>';
+  }
+  if (p === '/admin/treasury') return panel('Treasury accounts',table(['Account','Currency','Provider','Reference','Status','Created'],d.treasury.map(x => [e(x.account_name || '—'),e(x.currency),e(x.provider || '—'),e(x.external_reference || '—'),status(x.status),e(date(x.created_at))]),'No treasury accounts returned.')) + '<div class="notice notice-info">Currencies are displayed separately. No conversion or transfer is performed in the browser.</div>';
+  if (p === '/admin/compliance') return panel('Compliance cases',table(['Case','User ID','Risk','Status','Summary','Created'],d.compliance.map(x => [e(x.case_type || '—'),e(x.user_id),status(x.risk_level),status(x.status),e(x.summary || '—'),e(date(x.created_at))]),'No compliance cases returned.'));
+  if (p === '/admin/audit-logs') return panel('Recent audit records',table(['Action','Actor role','Entity','Entity ID','Reason','Created'],d.audits.map(x => [e(x.action),e(x.actor_role),e(x.entity_type),e(x.entity_id),e(x.reason || '—'),e(date(x.created_at))]),'No audit records returned.'));
+  return adminContent('/admin/dashboard');
+}
+async function render() {
+  const id = ++sequence; const p = path(); d.error = ''; d.notice = '';
+  if (p === '/welcome') { app!.innerHTML = welcome(); return; }
+  if (['/login/user','/login/admin','/register/user','/register/admin'].includes(p)) {
+    if ((p.includes('/admin') ? 'admin' : 'user') !== ROLE) { go('/welcome'); return; }
+    app!.innerHTML = authPage(p.startsWith('/register') ? 'register' : 'login'); return;
+  }
+  if ((ROLE === 'user' && p.startsWith('/admin')) || (ROLE === 'admin' && p.startsWith('/user'))) { go(ROLE === 'user' ? '/user/dashboard' : '/admin/dashboard'); return; }
+  d.user = await supabase.currentUser();
+  if (!d.user) { app!.innerHTML = authPage('login'); return; }
+  if (ROLE === 'admin' && !isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator access required</h2><p>This account has no trusted admin role. Sign in with the authorized Admin CEO account.</p></section>',p); return; }
+  app!.innerHTML = shell('<section class="state-card"><div class="spinner"></div><h2>Loading account data</h2><p>Fetching authorized records from Supabase…</p></section>',p);
   try {
-    const parsed = JSON.parse(raw) as AppState;
-    return {
-      users: parsed.users ?? defaultState.users,
-      activeUserId: parsed.activeUserId ?? null,
-    };
-  } catch {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
-    return defaultState;
+    if (ROLE === 'user') await loadUser(); else await loadAdmin();
+    if (id !== sequence) return;
+    if (ROLE === 'user' && d.profile && (d.profile.approval_status !== 'approved' || d.profile.account_status !== 'active')) app!.innerHTML = shell(pendingPage(),p);
+    else app!.innerHTML = shell(ROLE === 'user' ? userContent(p) : adminContent(p),p);
+  } catch (x) {
+    if (id !== sequence) return;
+    d.error = err(x);
+    app!.innerHTML = shell('<section class="state-card"><h2>Could not load account data</h2><p>' + e(d.error) + '</p><p class="muted">Check deployment environment variables, Edge Function availability, account approval, and database permissions. No sample data was substituted.</p><button class="primary" data-action="refresh">Try again</button></section>',p);
   }
-};
-
-const writeState = (next: AppState) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-};
-
-const getActiveUser = (): User | null => {
-  const state = readState();
-  if (!state.activeUserId) return null;
-  return state.users.find((user) => user.id === state.activeUserId) ?? null;
-};
-
-const setActiveUser = (user: User | null) => {
-  const state = readState();
-  writeState({ ...state, activeUserId: user ? user.id : null });
-};
-
-const getRouteFromHash = (): Route => {
-  const hash = window.location.hash || '#/welcome';
-  const path = hash.replace('#', '') || '/welcome';
-  const routeMap: Record<string, Route> = {
-    '/welcome': '/welcome',
-    '/login/user': '/login/user',
-    '/login/admin': '/login/admin',
-    '/register/user': '/register/user',
-    '/register/admin': '/register/admin',
-    '/user/dashboard': '/user/dashboard',
-    '/user/marketplace': '/user/marketplace',
-    '/user/kyc': '/user/kyc',
-    '/admin/dashboard': '/admin/dashboard',
-    '/admin/users': '/admin/users',
-    '/admin/approvals': '/admin/approvals',
-    '/admin/treasury': '/admin/treasury',
-  };
-
-  return routeMap[path] ?? '/welcome';
-};
-
-const navigate = (route: Route) => {
-  window.location.hash = route;
-};
-
-const money = (value: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(value);
-
-const metricCards = (entries: Array<{ label: string; value: string; change: string; tone: 'positive' | 'neutral' | 'alert' }>) =>
-  entries
-    .map(
-      (entry) => `
-        <article class="metric-card metric-${entry.tone}">
-          <p>${entry.label}</p>
-          <h3>${entry.value}</h3>
-          <span>${entry.change}</span>
-        </article>
-      `,
-    )
-    .join('');
-
-const sidebar = (role: Role) => {
-  const links = {
-    user: [
-      { route: '/user/dashboard', label: 'Dashboard' },
-      { route: '/user/marketplace', label: 'Marketplace' },
-      { route: '/user/kyc', label: 'KYC' },
-      { route: '/welcome', label: 'Logout' },
-    ],
-    admin: [
-      { route: '/admin/dashboard', label: 'Dashboard' },
-      { route: '/admin/users', label: 'Users' },
-      { route: '/admin/approvals', label: 'Approvals' },
-      { route: '/admin/treasury', label: 'Treasury' },
-      { route: '/welcome', label: 'Logout' },
-    ],
-  } as const;
-
-  return `
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <div class="brand-mark">IB</div>
-        <div>
-          <span>Invest Broker</span>
-          <small>${role === 'user' ? 'Client portal' : 'Admin portal'}</small>
-        </div>
-      </div>
-      <nav class="sidebar-nav">
-        ${links[role]
-          .map((item) => {
-            const action = item.label === 'Logout' ? 'logout' : 'route';
-            return `<button class="menu-link" data-action="${action}" data-route="${item.route}">${item.label}</button>`;
-          })
-          .join('')}
-      </nav>
-    </aside>
-  `;
-};
-
-const renderWelcome = () => PORTAL_ROLE === 'admin' ? `
-  <main class="page-shell compact-shell">
-    <header class="topbar shell-pad">
-      <div class="brand-wrap">
-        <div class="brand-mark">IB</div>
-        <div>
-          <p class="eyebrow">Invest Broker · Private</p>
-          <h1>Administration portal</h1>
-        </div>
-      </div>
-      <span class="chip chip-blue">Admin workspace</span>
-    </header>
-    <section class="hero-panel hero-split shell-pad">
-      <div>
-        <p class="eyebrow accent">Restricted operations</p>
-        <h2>Manage platform operations from a dedicated admin app.</h2>
-        <p>Review demo KYC queues, approvals, user management, and treasury screens. This preview uses browser-only sample data and is not connected to real money or production authentication.</p>
-      </div>
-      <div class="stacked-actions">
-        <button class="secondary" data-action="route" data-route="/login/admin">Admin sign in</button>
-      </div>
-    </section>
-    <p class="eyebrow" style="text-align:center;margin-top:22px">Demo preview only · no real financial operations</p>
-  </main>
-` : `
-  <main class="page-shell">
-    <header class="topbar shell-pad">
-      <div class="brand-wrap">
-        <div class="brand-mark">IB</div>
-        <div>
-          <p class="eyebrow">Invest Broker</p>
-          <h1>Customer portal</h1>
-        </div>
-      </div>
-      <span class="chip chip-green">Client app</span>
-    </header>
-    <section class="hero-panel hero-split shell-pad">
-      <div>
-        <p class="eyebrow accent">Your investment workspace</p>
-        <h2>Track your portfolio and account journey in one place.</h2>
-        <p>Sign in to view the customer dashboard, explore the sample marketplace, and review onboarding screens. This preview uses browser-only sample data and does not process deposits or withdrawals.</p>
-      </div>
-      <div class="stacked-actions">
-        <button class="primary" data-action="route" data-route="/login/user">User sign in</button>
-        <button class="ghost" data-action="route" data-route="/register/user">Create user account</button>
-      </div>
-    </section>
-    <section class="feature-grid shell-pad">
-      <article class="card feature-card">
-        <span class="chip chip-green">Customer journey</span>
-        <h3>Your portfolio</h3>
-        <ul><li>Account and portfolio overview</li><li>Sample investment marketplace</li><li>KYC status and activity screens</li></ul>
-      </article>
-      <article class="card feature-card">
-        <span class="chip chip-blue">Private operations</span>
-        <h3>Separate admin app</h3>
-        <p>The administration workspace is published at its own URL and is not linked from this customer portal.</p>
-      </article>
-    </section>
-    <p class="eyebrow" style="text-align:center;margin-top:22px">Demo preview only · no real financial operations</p>
-  </main>
-`;
-
-const renderAuthPage = (role: Role, mode: 'login' | 'register') => `
-  <main class="page-shell compact-shell">
-    <header class="topbar shell-pad">
-      <div class="brand-wrap">
-        <div class="brand-mark">IB</div>
-        <div>
-          <p class="eyebrow">${role === 'user' ? 'User portal' : 'Admin portal'}</p>
-          <h1>${mode === 'login' ? 'Welcome back' : 'Create account'}</h1>
-        </div>
-      </div>
-      <button class="ghost" data-action="route" data-route="/welcome">Back</button>
-    </header>
-
-    <section class="auth-card shell-pad">
-      <div class="auth-header">
-        <span class="chip ${role === 'user' ? 'chip-green' : 'chip-blue'}">${role === 'user' ? 'Client access' : 'Private operations'}</span>
-        <h2>${mode === 'login' ? 'Secure sign in' : 'Create your account'}</h2>
-      </div>
-
-      <form class="auth-form" data-form="auth" data-role="${role}" data-mode="${mode}">
-        ${mode === 'register' ? `<label><span>Full name</span><input name="name" type="text" placeholder="Ada Okafor" required /></label>` : ''}
-        <label><span>Email</span><input name="email" type="email" placeholder="${role === 'user' ? 'user@investbroker.ng' : 'admin@investbroker.ng'}" required /></label>
-        <label><span>Password</span><input name="password" type="password" placeholder="••••••••" required /></label>
-        <button class="primary submit-button" type="submit">${mode === 'login' ? 'Continue' : 'Create account'}</button>
-      </form>
-    </section>
-  </main>
-`;
-
-const renderDashboardLayout = (role: Role, main: string) => `
-  <main class="dashboard-shell">
-    ${sidebar(role)}
-    <section class="main-panel">
-      <header class="topbar panel-header-row">
-        <div>
-          <p class="eyebrow">${role === 'user' ? 'User platform' : 'Admin platform'}</p>
-          <h2>${role === 'user' ? 'Customer dashboard' : 'Operations dashboard'}</h2>
-        </div>
-        <div class="header-actions">
-          <span class="status-pill">System stable</span>
-          <button class="ghost" data-action="logout">Logout</button>
-        </div>
-      </header>
-      ${main}
-    </section>
-  </main>
-`;
-
-const renderUserDashboard = () => {
-  const user = getActiveUser();
-  if (!user || user.role !== 'user') {
-    navigate('/welcome');
-    return '';
-  }
-
-  const metrics = [
-    { label: 'Portfolio balance', value: money(user.walletBalance), change: '+12.4% vs last month', tone: 'positive' as const },
-    { label: 'Invested capital', value: money(user.invested), change: '3 new this week', tone: 'neutral' as const },
-    { label: 'Pending withdrawals', value: money(user.pendingWithdrawals), change: '2 approvals pending', tone: 'alert' as const },
-    { label: 'KYC status', value: user.kycStatus.toUpperCase(), change: 'No blockers', tone: 'positive' as const },
-  ];
-
-  const main = `
-    <section class="hero-panel user-hero">
-      <div>
-        <p class="eyebrow accent">Welcome back</p>
-        <h3>Hello, ${user.name.split(' ')[0]}</h3>
-        <p>Monitor investments, wallet activity, and withdrawals from a single secure workspace.</p>
-      </div>
-      <div class="hero-badge">
-        <span class="pulse"></span>
-        Operationally stable
-      </div>
-    </section>
-
-    <section class="metrics-grid">
-      ${metricCards(metrics)}
-    </section>
-
-    <section class="dashboard-grid">
-      <article class="card panel-card">
-        <div class="card-title-row">
-          <h3>Recent activity</h3>
-          <button class="ghost small" data-action="route" data-route="/user/dashboard">View all</button>
-        </div>
-        <ul class="activity-list">
-          <li><div><strong>Investment matured</strong><small>Farm Credit Note • 320 days</small></div><div class="activity-meta"><span>15 mins ago</span><em>+₦410,000</em></div></li>
-          <li><div><strong>Deposit received</strong><small>Zenith Bank transfer</small></div><div class="activity-meta"><span>3 hours ago</span><em>+₦750,000</em></div></li>
-          <li><div><strong>Withdrawal queued</strong><small>Bank transfer • GTBank</small></div><div class="activity-meta"><span>Yesterday</span><em>-₦650,000</em></div></li>
-        </ul>
-      </article>
-
-      <article class="card panel-card">
-        <div class="card-title-row">
-          <h3>Priority focus</h3>
-          <button class="ghost small" data-action="route" data-route="/user/marketplace">Open marketplace</button>
-        </div>
-        <ul class="focus-list">
-          <li>Digital onboarding and identity verification</li>
-          <li>Wallet reconciliation and investment access</li>
-          <li>Withdrawal eligibility and compliance review</li>
-        </ul>
-      </article>
-    </section>
-  `;
-
-  return renderDashboardLayout('user', main);
-};
-
-const renderAdminDashboard = () => {
-  const user = getActiveUser();
-  if (!user || user.role !== 'admin') {
-    navigate('/welcome');
-    return '';
-  }
-
-  const metrics = [
-    { label: 'Total users', value: '28,420', change: '+6.2% this month', tone: 'positive' as const },
-    { label: 'Pending KYC', value: '146', change: '18 need follow-up', tone: 'alert' as const },
-    { label: 'Pending withdrawals', value: '34', change: '9 over SLA', tone: 'alert' as const },
-    { label: 'Treasury position', value: '₦297.9M', change: 'Healthy reserve ratio', tone: 'positive' as const },
-  ];
-
-  const main = `
-    <section class="hero-panel admin-hero">
-      <div>
-        <p class="eyebrow accent">Operations overview</p>
-        <h3>Review risk, approvals, and treasury in real time.</h3>
-        <p>Monitor compliance, withdrawals, KYC review, and treasury flows across the platform.</p>
-      </div>
-      <div class="hero-badge">
-        <span class="pulse"></span>
-        Current cycle
-      </div>
-    </section>
-
-    <section class="metrics-grid">
-      ${metricCards(metrics)}
-    </section>
-
-    <section class="dashboard-grid">
-      <article class="card panel-card">
-        <div class="card-title-row">
-          <h3>Approval queue</h3>
-          <button class="ghost small" data-action="route" data-route="/admin/approvals">Review</button>
-        </div>
-        <ul class="activity-list">
-          <li><div><strong>KYC decision needed</strong><small>User #18472 • medium risk</small></div><div class="activity-meta"><span>11 mins ago</span></div></li>
-          <li><div><strong>Withdrawal review</strong><small>34 requests pending approval</small></div><div class="activity-meta"><span>55 mins ago</span></div></li>
-          <li><div><strong>Treasury transfer</strong><small>18.2M pending verification</small></div><div class="activity-meta"><span>3 hours ago</span></div></li>
-        </ul>
-      </article>
-
-      <article class="card panel-card">
-        <div class="card-title-row">
-          <h3>Current controls</h3>
-          <button class="ghost small" data-action="route" data-route="/admin/treasury">Open treasury</button>
-        </div>
-        <ul class="focus-list">
-          <li>User governance and access review</li>
-          <li>KYC and risk controls</li>
-          <li>Immutable audit logging</li>
-          <li>Fund movement approvals</li>
-        </ul>
-      </article>
-    </section>
-  `;
-
-  return renderDashboardLayout('admin', main);
-};
-
-const renderMarketplace = () => {
-  const user = getActiveUser();
-  if (!user || user.role !== 'user') {
-    navigate('/welcome');
-    return '';
-  }
-
-  const plans = [
-    { name: 'Treasury Plus', returnText: '12% p.a.', min: 100000, duration: '12 months' },
-    { name: 'Growth Fund', returnText: '15% p.a.', min: 250000, duration: '18 months' },
-    { name: 'Property Yield', returnText: '18% p.a.', min: 500000, duration: '24 months' },
-  ];
-
-  const main = `
-    <section class="page-section-card">
-      <div class="card-title-row">
-        <div>
-          <p class="eyebrow accent">Marketplace</p>
-          <h3>Investment plans</h3>
-        </div>
-      </div>
-
-      <div class="plan-grid">
-        ${plans
-          .map(
-            (plan) => `
-              <article class="plan-card">
-                <div class="plan-badge">${plan.name}</div>
-                <h4>${plan.name}</h4>
-                <p>Minimum: ${money(plan.min)}</p>
-                <p>Duration: ${plan.duration}</p>
-                <p>Projected return: ${plan.returnText}</p>
-                <button class="primary" data-action="buy-plan" data-plan="${plan.name}">Invest now</button>
-              </article>
-            `,
-          )
-          .join('')}
-      </div>
-    </section>
-  `;
-
-  return renderDashboardLayout('user', main);
-};
-
-const renderKyc = () => {
-  const user = getActiveUser();
-  if (!user || user.role !== 'user') {
-    navigate('/welcome');
-    return '';
-  }
-
-  const main = `
-    <section class="page-section-card">
-      <div class="card-title-row">
-        <div>
-          <p class="eyebrow accent">KYC</p>
-          <h3>Verification status</h3>
-        </div>
-        <span class="status-pill success">${user.kycStatus}</span>
-      </div>
-
-      <div class="two-column-grid">
-        <div class="card mini-panel">
-          <h4>Required documents</h4>
-          <ul class="check-list">
-            <li>Government-issued ID</li>
-            <li>Proof of address</li>
-            <li>Bank verification</li>
-            <li>Passport photograph</li>
-          </ul>
-        </div>
-
-        <div class="card mini-panel">
-          <h4>Review timeline</h4>
-          <ul class="timeline">
-            <li>Not started</li>
-            <li>Pending review</li>
-            <li>Under review</li>
-            <li>Approved or rejected</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="card upload-box">
-        <h4>Upload supporting documents</h4>
-        <button class="primary" data-action="upload-kyc">Upload verification documents</button>
-      </div>
-    </section>
-  `;
-
-  return renderDashboardLayout('user', main);
-};
-
-const renderAdminUsers = () => {
-  const state = readState();
-  const users = state.users.filter((u) => u.role === 'user');
-
-  const main = `
-    <section class="page-section-card">
-      <div class="card-title-row">
-        <div>
-          <p class="eyebrow accent">User management</p>
-          <h3>Portfolio users</h3>
-        </div>
-      </div>
-
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>KYC</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${users
-            .map(
-              (u) => `
-                <tr>
-                  <td>${u.name}</td>
-                  <td>${u.email}</td>
-                  <td>${u.kycStatus}</td>
-                  <td><span class="tag">${u.kycStatus === 'approved' ? 'Verified' : 'Needs review'}</span></td>
-                </tr>
-              `,
-            )
-            .join('')}
-        </tbody>
-      </table>
-    </section>
-  `;
-
-  return renderDashboardLayout('admin', main);
-};
-
-const renderAdminApprovals = () => {
-  const main = `
-    <section class="page-section-card">
-      <div class="card-title-row">
-        <div>
-          <p class="eyebrow accent">Approvals</p>
-          <h3>Review queue</h3>
-        </div>
-      </div>
-
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Request</th>
-            <th>Owner</th>
-            <th>Value</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>KYC review</td>
-            <td>Ada Okafor</td>
-            <td>₦2.4M</td>
-            <td><div class="inline-actions"><button class="primary small-btn" data-action="approve-request">Approve</button><button class="ghost small-btn" data-action="reject-request">Reject</button></div></td>
-          </tr>
-          <tr>
-            <td>Withdrawal approval</td>
-            <td>David Adebayo</td>
-            <td>₦850,000</td>
-            <td><div class="inline-actions"><button class="primary small-btn" data-action="approve-request">Approve</button><button class="ghost small-btn" data-action="reject-request">Reject</button></div></td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-  `;
-
-  return renderDashboardLayout('admin', main);
-};
-
-const renderTreasury = () => {
-  const main = `
-    <section class="page-section-card">
-      <div class="card-title-row">
-        <div>
-          <p class="eyebrow accent">Treasury</p>
-          <h3>Fund movement and reconciliation</h3>
-        </div>
-      </div>
-
-      <div class="two-column-grid">
-        <article class="card mini-panel">
-          <h4>Movement overview</h4>
-          <ul class="check-list">
-            <li>Source: Client funds</li>
-            <li>Destination: Treasury reserve</li>
-            <li>Reason: Investment settlement</li>
-            <li>Approval: Manager override</li>
-          </ul>
-        </article>
-
-        <article class="card mini-panel">
-          <h4>Recent treasury actions</h4>
-          <ul class="timeline">
-            <li>₦18.2M transfer approved</li>
-            <li>₦7.5M large deposit flagged</li>
-            <li>Reconciliation review open</li>
-          </ul>
-        </article>
-      </div>
-
-      <div class="card upload-box">
-        <h4>Approve or reject treasury request</h4>
-        <div class="inline-actions">
-          <button class="primary small-btn" data-action="approve-treasury">Approve</button>
-          <button class="ghost small-btn" data-action="reject-treasury">Reject</button>
-        </div>
-      </div>
-    </section>
-  `;
-
-  return renderDashboardLayout('admin', main);
-};
-
-const routeToComponent = (route: Route) => {
-  if (route === '/welcome') return renderWelcome();
-  if (route === '/login/user') return renderAuthPage('user', 'login');
-  if (route === '/login/admin') return renderAuthPage('admin', 'login');
-  if (route === '/register/user') return renderAuthPage('user', 'register');
-  if (route === '/register/admin') return renderAuthPage('admin', 'register');
-  if (route === '/user/dashboard') return renderUserDashboard();
-  if (route === '/user/marketplace') return renderMarketplace();
-  if (route === '/user/kyc') return renderKyc();
-  if (route === '/admin/dashboard') return renderAdminDashboard();
-  if (route === '/admin/users') return renderAdminUsers();
-  if (route === '/admin/approvals') return renderAdminApprovals();
-  if (route === '/admin/treasury') return renderTreasury();
-  return renderWelcome();
-};
-
-const requireLogin = (role: Role) => {
-  const user = getActiveUser();
-  if (!user || user.role !== role) {
-    navigate('/welcome');
-    return false;
-  }
-  return true;
-};
-
-const handleAuthSubmit = (event: SubmitEvent) => {
-  event.preventDefault();
-  const form = event.target as HTMLFormElement;
-  const formData = new FormData(form);
-  const role = form.dataset.role as Role;
-  const mode = form.dataset.mode as 'login' | 'register';
-  if (role !== PORTAL_ROLE || (role === 'admin' && mode === 'register')) {
-    alert('This action is not available in this portal.');
-    return;
-  }
-  const state = readState();
-
-  const email = String(formData.get('email') ?? '').trim();
-  const password = String(formData.get('password') ?? '').trim();
-
-  if (mode === 'login') {
-    const match = state.users.find((user) => user.email.toLowerCase() === email.toLowerCase() && user.password === password && user.role === role);
-    if (!match) {
-      alert('Invalid credentials for this portal.');
-      return;
+}
+async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
+  event.preventDefault(); const values = new FormData(form); const email = String(values.get('email') || '').trim().toLowerCase(); const password = String(values.get('password') || '');
+  const btn = form.querySelector<HTMLButtonElement>('button[type="submit"]'); if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
+  try {
+    if (!supabase.configured) throw new Error('Missing Vercel environment variables VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+    if (form.dataset.mode === 'register') {
+      if (ROLE !== 'user') throw new Error('Admin registration is disabled.');
+      await supabase.signUp(email,password,String(values.get('full_name') || '').trim());
+      if (!supabase.session()) { app!.innerHTML = authPage('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
+      d.user = await supabase.currentUser(); go('/user/dashboard'); return;
     }
-    setActiveUser(match);
-    navigate(role === 'user' ? '/user/dashboard' : '/admin/dashboard');
-    return;
+    let session = await supabase.signIn(email,password); let user = session.user;
+    if (ROLE === 'admin' && !isAdmin(user) && email === 'udofiaasianubong583@gmail.com') {
+      await supabase.invoke('admin-bootstrap',{}); session = await supabase.refreshSession() || session; user = await supabase.currentUser() || user;
+    }
+    if (ROLE === 'admin' && !isAdmin(user)) { await supabase.signOut(); throw new Error('This login does not have trusted administrator role metadata. Admin access cannot be granted by the frontend.'); }
+    if (ROLE === 'user' && isAdmin(user)) { await supabase.signOut(); throw new Error('This is an administrator account. Use the Admin CEO app.'); }
+    d.user = user;
+    if (ROLE === 'user') { d.profile = await edge<Profile>('user-api','profile'); go('/user/dashboard'); }
+    else go('/admin/dashboard');
+  } catch (x) {
+    d.error = err(x); app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login');
+    const box = document.createElement('div'); box.className = 'notice notice-error'; box.textContent = d.error; app!.querySelector('.auth-card')?.prepend(box);
+  } finally { if (btn) { btn.disabled = false; btn.textContent = form.dataset.mode === 'register' ? 'Create customer account' : 'Sign in securely'; } }
+}
+app.addEventListener('submit', event => {
+  const form = event.target as HTMLFormElement;
+  if (form.matches('[data-form="auth"]')) void authSubmit(event as SubmitEvent,form);
+  if (form.matches('[data-form="admin-ai"]')) {
+    event.preventDefault();
+    if (ROLE !== 'admin') return;
+    const question = String(new FormData(form).get('question') || '').trim();
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (button) { button.disabled = true; button.textContent = 'Checking secure assistant…'; }
+    void supabase.invoke<{data?:{answer?:string;model?:string};answer?:string;model?:string}>('admin-ai',{question}).then(result => {
+      d.aiAnswer = String(result.data?.answer ?? result.answer ?? 'The assistant returned no answer.');
+      d.aiModel = String(result.data?.model ?? result.model ?? 'read-only');
+      return render();
+    }).catch(x => {
+      const box = document.createElement('div'); box.className = 'notice notice-error'; box.textContent = err(x); form.prepend(box);
+    }).finally(() => { if (button) { button.disabled = false; button.textContent = 'Ask Admin AI'; } });
   }
-
-  const name = String(formData.get('name') ?? '').trim();
-  const existing = state.users.find((user) => user.email.toLowerCase() === email.toLowerCase());
-  if (existing) {
-    alert('This email is already registered. Please log in instead.');
-    return;
+  if (form.matches('[data-form="support"]')) {
+    event.preventDefault(); const fd = new FormData(form);
+    void edge<Row>('user-api','support','POST',{subject:String(fd.get('subject')||''),body:String(fd.get('body')||'')}).then(() => { d.notice = 'Support message saved by the backend.'; return render(); }).catch(x => { d.error = err(x); const box = document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; form.prepend(box); });
   }
-
-  const newUser: User = {
-    id: `${role}-${Date.now()}`,
-    name,
-    email,
-    password,
-    role,
-    kycStatus: 'not-started',
-    walletBalance: role === 'user' ? 0 : 0,
-    invested: 0,
-    pendingWithdrawals: 0,
-  };
-
-  state.users.push(newUser);
-  writeState(state);
-  setActiveUser(newUser);
-  navigate(role === 'user' ? '/user/dashboard' : '/admin/dashboard');
-};
-
-const handleAction = (action: string, route?: string, plan?: string) => {
-  if (action === 'route' && route) {
-    if ((route.startsWith('/user') || route === '/login/user' || route === '/register/user') && PORTAL_ROLE !== 'user') return;
-    if ((route.startsWith('/admin') || route === '/login/admin' || route === '/register/admin') && PORTAL_ROLE !== 'admin') return;
-    if (route.startsWith('/user') && !requireLogin('user')) return;
-    if (route.startsWith('/admin') && !requireLogin('admin')) return;
-    navigate(route as Route);
-    return;
-  }
-
-  if (action === 'logout') {
-    setActiveUser(null);
-    navigate('/welcome');
-    return;
-  }
-
-  if (action === 'buy-plan' && plan) {
-    const user = getActiveUser();
-    if (!user || user.role !== 'user') return;
-    alert(`Investment request started for ${plan}. This mirrors a real marketplace flow and will route to the order review process.`);
-    return;
-  }
-
-  if (action === 'upload-kyc') {
-    alert('KYC upload flow started. This would connect to secure document storage and review workflow.');
-    return;
-  }
-
-  if (action === 'approve-request' || action === 'approve-treasury') {
-    alert('Approval recorded in the audit trail. This matches the admin approvals workflow.');
-    return;
-  }
-
-  if (action === 'reject-request' || action === 'reject-treasury') {
-    alert('Request rejected and flagged for follow-up.');
-    return;
-  }
-};
-
-const renderApp = () => {
-  const route = getRouteFromHash();
-  const activeUser = getActiveUser();
-
-  if (PORTAL_ROLE === 'user' && (route.startsWith('/admin') || route === '/login/admin' || route === '/register/admin')) {
-    navigate('/login/user');
-    return;
-  }
-  if (PORTAL_ROLE === 'admin' && (route.startsWith('/user') || route === '/login/user' || route === '/register/user')) {
-    navigate('/login/admin');
-    return;
-  }
-
-  if (route.startsWith('/user') && (!activeUser || activeUser.role !== 'user')) {
-    app.innerHTML = renderAuthPage('user', 'login');
-    return;
-  }
-
-  if (route.startsWith('/admin') && (!activeUser || activeUser.role !== 'admin')) {
-    app.innerHTML = renderAuthPage('admin', 'login');
-    return;
-  }
-
-  app.innerHTML = routeToComponent(route);
-};
-
-app.addEventListener('submit', (event) => {
-  const form = event.target as HTMLFormElement | null;
-  if (!form || !form.matches('[data-form="auth"]')) return;
-  handleAuthSubmit(event as SubmitEvent);
 });
-
-app.addEventListener('click', (event) => {
-  const target = event.target as HTMLElement;
+app.addEventListener('click', event => {
+  const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]'); if (!target) return;
   const action = target.dataset.action;
-  const route = target.dataset.route;
-  const plan = target.dataset.plan;
-
-  if (action) {
-    handleAction(action, route as Route | undefined, plan);
+  if (action === 'route' && target.dataset.route) { go(target.dataset.route); return; }
+  if (action === 'refresh') { void render(); return; }
+  if (action === 'logout') { void supabase.signOut().finally(() => { d.user = null; d.profile = null; go('/welcome'); }); return; }
+  if (action === 'review-user' && ROLE === 'admin' && target.dataset.userId && target.dataset.review) {
+    const review = target.dataset.review; const reason = review === 'reject' ? prompt('Optional reason for rejection:') : '';
+    if (review === 'reject' && reason === null) return;
+    if (!confirm((review === 'approve' ? 'Approve' : 'Reject') + ' this customer application? The server records the review.')) return;
+    target.setAttribute('disabled','true');
+    void edge<Row>('admin-api','users','POST',{action:review,user_id:target.dataset.userId,reason:reason || ''}).then(() => { d.notice='Application review was recorded by the backend.'; return render(); }).catch(x => { d.error=err(x); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.topbar')?.after(box); target.removeAttribute('disabled'); });
   }
 });
-
-window.addEventListener('hashchange', renderApp);
-
-renderApp();
+window.addEventListener('hashchange', () => { void render(); });
+void render();
