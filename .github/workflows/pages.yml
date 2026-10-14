@@ -2,7 +2,8 @@ name: Deploy Invest Broker to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -25,31 +26,40 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: package.json
 
+      # The repository currently has no committed package-lock.json.
+      # Do not enable npm caching or npm ci until a lockfile is committed.
       - name: Install dependencies
         run: npm install --no-package-lock --no-audit --no-fund
 
-      - name: Type-check
+      - name: Type-check application
         run: npx tsc --noEmit
 
       - name: Build customer portal
         run: VITE_APP_ROLE=user npx vite build --base=/Invest-broker/ --outDir dist-user
 
-      - name: Build Admin CEO portal
+      - name: Build admin portal
         run: VITE_APP_ROLE=admin npx vite build --base=/Invest-broker/admin/ --outDir dist-admin
 
-      - name: Assemble both portals
+      - name: Assemble and validate both portals
+        shell: bash
         run: |
-          mkdir -p dist/admin
+          set -euo pipefail
+          mkdir -p dist dist/admin
           cp -a dist-user/. dist/
           cp -a dist-admin/. dist/admin/
           touch dist/.nojekyll
-          test -f dist/index.html
-          test -f dist/admin/index.html
-          test -f dist/assets/$(basename "$(find dist/assets -maxdepth 1 -type f -name '*.js' | head -n 1)")
-          echo "Both customer and admin entry points are present."
+
+          test -s dist/index.html
+          test -s dist/admin/index.html
+          test -d dist/assets
+          test -d dist/admin/assets
+          test -n "$(find dist/assets -maxdepth 1 -type f -name '*.js' -print -quit)"
+          test -n "$(find dist/admin/assets -maxdepth 1 -type f -name '*.js' -print -quit)"
+
+          echo "Customer portal and admin portal entry points and JavaScript assets are present."
+          echo "Customer portal base: /Invest-broker/"
+          echo "Admin portal base: /Invest-broker/admin/"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
