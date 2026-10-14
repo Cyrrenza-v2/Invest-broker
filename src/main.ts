@@ -58,6 +58,27 @@ function authPage(mode: 'login'|'register') {
     (mode === 'login' && ROLE === 'user' ? 'New here? <a href="#/register/user">Create an account</a>' : mode === 'register' ? '<a href="#/login/user">Already registered? Sign in</a>' : '<a href="#/welcome">Back to welcome</a>') +
     '</p><p class="small-text muted">Admin access comes from trusted server-side role metadata, never from a form selection.</p></section></main>';
 }
+function currentAssuranceLevel(): string | null {
+  const token = supabase.session()?.access_token;
+  if (!token) return null;
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='))) as { aal?: unknown };
+    return typeof claims.aal === 'string' ? claims.aal : null;
+  } catch { return null; }
+}
+async function showAdminMfaChallenge(): Promise<void> {
+  const factors = await supabase.listMfaFactors();
+  const factor = factors.find(x => x.status === 'verified' && x.factor_type === 'totp');
+  if (!factor) throw new Error('Admin CEO access requires a verified authenticator factor. Contact the platform owner to enroll one securely.');
+  const challenge = await supabase.challengeMfa(factor.id);
+  const challengeId = challenge.id || challenge.challenge_id;
+  if (!challengeId) throw new Error('Supabase did not return an MFA challenge. Please sign in again.');
+  pendingMfa = { factorId: factor.id, challengeId };
+  app!.innerHTML = adminMfaPage();
+}
 function adminMfaPage() {
   return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>Admin CEO two-step verification</small></span></a><section class="auth-card"><p class="eyebrow">Second verification required</p><h1>Verify it’s you</h1><p class="muted">Enter the current 6-digit code from your enrolled authenticator app. The backend will not release the admin dashboard until this verification succeeds.</p><form data-form="mfa"><label>Authenticator code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000"></label><button class="primary full-width" type="submit">Verify and open admin dashboard</button></form><p class="auth-switch"><a href="#/login/admin" data-action="cancel-mfa">Cancel and sign in again</a></p><p class="small-text muted">Verification is checked by Supabase Auth and the protected admin API.</p></section></main>';
 }
@@ -149,6 +170,11 @@ async function render() {
   d.user = await supabase.currentUser();
   if (!d.user) { app!.innerHTML = authPage('login'); return; }
   if (ROLE === 'admin' && !isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator access required</h2><p>This account has no trusted admin role. Sign in with the authorized Admin CEO account.</p></section>',p); return; }
+  if (ROLE === 'admin' && currentAssuranceLevel() !== 'aal2') {
+    try { await showAdminMfaChallenge(); }
+    catch (x) { d.error = err(x); app!.innerHTML = authPage('login'); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.auth-card')?.prepend(box); }
+    return;
+  }
   app!.innerHTML = shell('<section class="state-card"><div class="spinner"></div><h2>Loading account data</h2><p>Fetching authorized records from Supabase…</p></section>',p);
   try {
     if (ROLE === 'user') await loadUser(); else await loadAdmin();
@@ -182,14 +208,7 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
     if (ROLE === 'user') { d.profile = await edge<Profile>('user-api','profile'); go('/user/dashboard'); }
     else {
       // Step up to Supabase AAL2 before any admin data request. A password login alone is not sufficient.
-      const factors = await supabase.listMfaFactors();
-      const factor = factors.find(x => x.status === 'verified' && x.factor_type === 'totp');
-      if (!factor) { await supabase.signOut(); throw new Error('Admin CEO access requires a verified authenticator factor. Contact the platform owner to enroll one securely.'); }
-      const challenge = await supabase.challengeMfa(factor.id);
-      const challengeId = challenge.id || challenge.challenge_id;
-      if (!challengeId) throw new Error('Supabase did not return an MFA challenge. Please sign in again.');
-      pendingMfa = { factorId: factor.id, challengeId };
-      app!.innerHTML = adminMfaPage();
+      await showAdminMfaChallenge();
       return;
     }
   } catch (x) {
