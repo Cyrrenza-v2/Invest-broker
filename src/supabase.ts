@@ -13,8 +13,8 @@ type AuthSession = {
 };
 
 const env = import.meta.env as Record<string, string | undefined>;
-const SUPABASE_URL = (env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
-const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY ?? '';
+const SUPABASE_URL = (env.VITE_SUPABASE_URL ?? 'https://rjgzvpkyccfpnpzlbcuc.supabase.co').replace(/\/$/, '');
+const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY ?? 'sb_publishable_WRqEfkebSkqEBYhiCSAXRA_Z_jovR3l';
 
 const SESSION_KEY = 'invest-broker-supabase-session-v1';
 
