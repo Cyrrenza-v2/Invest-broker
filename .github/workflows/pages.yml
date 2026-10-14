@@ -27,10 +27,17 @@ jobs:
         with:
           node-version: 22
 
-      # The repository currently has no committed package-lock.json.
-      # Do not enable npm caching or npm ci until a lockfile is committed.
+      # The repository has no committed package-lock.json. Use a current npm
+      # Arborist implementation and avoid setup-node's package-lock cache path.
+      - name: Update npm installer
+        run: npm install --global npm@11.6.2
+
       - name: Install dependencies
-        run: npm install --no-package-lock --no-audit --no-fund
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --version
+          npm install --no-package-lock --legacy-peer-deps --no-audit --no-fund
 
       - name: Type-check application
         run: npx tsc --noEmit
@@ -57,7 +64,7 @@ jobs:
           test -n "$(find dist/assets -maxdepth 1 -type f -name '*.js' -print -quit)"
           test -n "$(find dist/admin/assets -maxdepth 1 -type f -name '*.js' -print -quit)"
 
-          echo "Customer portal and admin portal entry points and JavaScript assets are present."
+          echo "Customer and admin portal entry points and JavaScript assets are present."
           echo "Customer portal base: /Invest-broker/"
           echo "Admin portal base: /Invest-broker/admin/"
 
