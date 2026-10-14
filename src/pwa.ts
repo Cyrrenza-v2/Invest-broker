@@ -3,7 +3,9 @@ type InstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
-const role = import.meta.env.VITE_APP_ROLE === "admin" ? "admin" : "user";
+const host = location.hostname.toLowerCase();
+const isAdminHost = host === "admin-invest-broker.vercel.app" || host.startsWith("admin-invest-broker-") || host === "invest-broker-19np.vercel.app" || host.startsWith("invest-broker-19np-");
+const role = isAdminHost || import.meta.env.VITE_APP_ROLE === "admin" ? "admin" : "user";
 const appConfig = role === "admin"
   ? { title: "Invest Broker Admin", manifest: "/manifest-admin.webmanifest", theme: "#1d4ed8" }
   : { title: "Invest Broker", manifest: "/manifest-user.webmanifest", theme: "#0f766e" };
