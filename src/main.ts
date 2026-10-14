@@ -11,6 +11,7 @@ const host = location.hostname.toLowerCase();
 const isAdminHost = host === 'admin-invest-broker.vercel.app' || host.startsWith('admin-invest-broker-') || host === 'invest-broker-19np.vercel.app' || host.startsWith('invest-broker-19np-');
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
+let pendingMfa: { factorId: string; challengeId: string } | null = null;
 let sequence = 0;
 const e = (v: unknown): string => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
 const date = (v: unknown) => v ? new Date(String(v)).toLocaleString() : '—';
@@ -56,6 +57,9 @@ function authPage(mode: 'login'|'register') {
     '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
     (mode === 'login' && ROLE === 'user' ? 'New here? <a href="#/register/user">Create an account</a>' : mode === 'register' ? '<a href="#/login/user">Already registered? Sign in</a>' : '<a href="#/welcome">Back to welcome</a>') +
     '</p><p class="small-text muted">Admin access comes from trusted server-side role metadata, never from a form selection.</p></section></main>';
+}
+function adminMfaPage() {
+  return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>Admin CEO two-step verification</small></span></a><section class="auth-card"><p class="eyebrow">Second verification required</p><h1>Verify it’s you</h1><p class="muted">Enter the current 6-digit code from your enrolled authenticator app. The backend will not release the admin dashboard until this verification succeeds.</p><form data-form="mfa"><label>Authenticator code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000"></label><button class="primary full-width" type="submit">Verify and open admin dashboard</button></form><p class="auth-switch"><a href="#/login/admin" data-action="cancel-mfa">Cancel and sign in again</a></p><p class="small-text muted">Verification is checked by Supabase Auth and the protected admin API.</p></section></main>';
 }
 function pendingPage() {
   return '<section class="state-card"><div class="state-symbol">…</div><p class="eyebrow">Application status</p><h2>' + (d.profile?.approval_status === 'rejected' ? 'Application not approved' : 'Waiting for account approval') + '</h2><p>Account access requires approval and activation by an authorized administrator.</p><div class="status-row"><span>Approval</span>' + status(d.profile?.approval_status) + '</div><div class="status-row"><span>Account</span>' + status(d.profile?.account_status) + '</div><button class="ghost" data-action="refresh">Check status</button><button class="ghost" data-action="logout">Sign out</button></section>';
@@ -176,15 +180,46 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
     if (ROLE === 'user' && isAdmin(user)) { await supabase.signOut(); throw new Error('This is an administrator account. Use the Admin CEO app.'); }
     d.user = user;
     if (ROLE === 'user') { d.profile = await edge<Profile>('user-api','profile'); go('/user/dashboard'); }
-    else go('/admin/dashboard');
+    else {
+      // Step up to Supabase AAL2 before any admin data request. A password login alone is not sufficient.
+      const factors = await supabase.listMfaFactors();
+      const factor = factors.find(x => x.status === 'verified' && x.factor_type === 'totp');
+      if (!factor) { await supabase.signOut(); throw new Error('Admin CEO access requires a verified authenticator factor. Contact the platform owner to enroll one securely.'); }
+      const challenge = await supabase.challengeMfa(factor.id);
+      const challengeId = challenge.id || challenge.challenge_id;
+      if (!challengeId) throw new Error('Supabase did not return an MFA challenge. Please sign in again.');
+      pendingMfa = { factorId: factor.id, challengeId };
+      app!.innerHTML = adminMfaPage();
+      return;
+    }
   } catch (x) {
     d.error = err(x); app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login');
     const box = document.createElement('div'); box.className = 'notice notice-error'; box.textContent = d.error; app!.querySelector('.auth-card')?.prepend(box);
   } finally { if (btn) { btn.disabled = false; btn.textContent = form.dataset.mode === 'register' ? 'Create customer account' : 'Sign in securely'; } }
 }
+async function mfaSubmit(event: SubmitEvent, form: HTMLFormElement) {
+  event.preventDefault();
+  if (ROLE !== 'admin' || !pendingMfa) { app!.innerHTML = authPage('login'); return; }
+  const code = String(new FormData(form).get('code') || '').replace(/\\s/g, '');
+  if (!/^\\d{6}$/.test(code)) { const box=document.createElement('div'); box.className='notice notice-error'; box.textContent='Enter the 6-digit code from your authenticator app.'; form.prepend(box); return; }
+  const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+  if (button) { button.disabled = true; button.textContent = 'Verifying…'; }
+  try {
+    const session = await supabase.verifyMfa(pendingMfa.factorId, pendingMfa.challengeId, code);
+    if (!isAdmin(session.user)) throw new Error('Verified session does not have the trusted administrator role.');
+    pendingMfa = null;
+    d.user = session.user;
+    go('/admin/dashboard');
+  } catch (x) {
+    const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=err(x); form.prepend(box);
+    if (button) { button.disabled = false; button.textContent = 'Verify and open admin dashboard'; }
+  }
+}
+
 app.addEventListener('submit', event => {
   const form = event.target as HTMLFormElement;
   if (form.matches('[data-form="auth"]')) void authSubmit(event as SubmitEvent,form);
+  if (form.matches('[data-form="mfa"]')) void mfaSubmit(event as SubmitEvent,form);
   if (form.matches('[data-form="admin-ai"]')) {
     event.preventDefault();
     if (ROLE !== 'admin') return;
@@ -207,6 +242,7 @@ app.addEventListener('submit', event => {
 app.addEventListener('click', event => {
   const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]'); if (!target) return;
   const action = target.dataset.action;
+  if (action === 'cancel-mfa') { pendingMfa = null; void supabase.signOut().finally(() => go('/login/admin')); return; }
   if (action === 'route' && target.dataset.route) { go(target.dataset.route); return; }
   if (action === 'refresh') { void render(); return; }
   if (action === 'logout') { void supabase.signOut().finally(() => { d.user = null; d.profile = null; go('/welcome'); }); return; }
