@@ -8,7 +8,8 @@ type AppData = { user: SupabaseUser | null; profile: Profile | null; users: Prof
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root not found');
 const host = location.hostname.toLowerCase();
-const ROLE: Role = import.meta.env.VITE_APP_ROLE === 'admin' || (!import.meta.env.VITE_APP_ROLE && (host === 'invest-broker-19np.vercel.app' || host.startsWith('invest-broker-19np-'))) ? 'admin' : 'user';
+const isAdminHost = host === 'invest-broker-19np.vercel.app' || host.startsWith('invest-broker-19np-');
+const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let sequence = 0;
 const e = (v: unknown): string => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
