@@ -18,7 +18,7 @@ if (description) description.content = role === "admin"
 
 const manifest = document.createElement("link");
 manifest.rel = "manifest";
-manifest.href = appConfig.manifest;
+manifest.href = `${import.meta.env.BASE_URL}${role === "admin" ? "manifest-admin.webmanifest" : "manifest-user.webmanifest"}`;
 document.head.appendChild(manifest);
 
 let installPrompt: InstallPromptEvent | null = null;
@@ -57,7 +57,7 @@ window.addEventListener("beforeinstallprompt", (event: Event) => {
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" })
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL, updateViaCache: "none" })
       .catch((error) => console.error("PWA service worker registration failed", error));
   });
 }
