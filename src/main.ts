@@ -200,8 +200,8 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
 async function mfaSubmit(event: SubmitEvent, form: HTMLFormElement) {
   event.preventDefault();
   if (ROLE !== 'admin' || !pendingMfa) { app!.innerHTML = authPage('login'); return; }
-  const code = String(new FormData(form).get('code') || '').replace(/\\s/g, '');
-  if (!/^\\d{6}$/.test(code)) { const box=document.createElement('div'); box.className='notice notice-error'; box.textContent='Enter the 6-digit code from your authenticator app.'; form.prepend(box); return; }
+  const code = String(new FormData(form).get('code') || '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(code)) { const box=document.createElement('div'); box.className='notice notice-error'; box.textContent='Enter the 6-digit code from your authenticator app.'; form.prepend(box); return; }
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
   if (button) { button.disabled = true; button.textContent = 'Verifying…'; }
   try {
