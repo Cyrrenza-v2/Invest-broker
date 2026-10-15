@@ -67,6 +67,8 @@ jobs:
           fi
       - name: Install Worker API token as Cloudflare secret
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           INVEST_BROKER_API_TOKEN: ${{ secrets.INVEST_BROKER_API_TOKEN }}
         run: printf '%s' "$INVEST_BROKER_API_TOKEN" | npx wrangler secret put API_TOKEN --config wrangler.jsonc
       - name: Deploy test-only Worker
