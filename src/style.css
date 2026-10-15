@@ -160,3 +160,70 @@ h3 { letter-spacing: -.02em; }
   .detail-list dd { max-width: 62%; }
   .ai-answer { padding: 14px; }
 }
+
+
+/* Customer app mobile-first release polish: accessible focus, safe-area spacing,
+   responsive navigation, and clear touch targets across installed PWAs. */
+:root {
+  color-scheme: light;
+  --ib-focus: #2563eb;
+  --ib-surface: #ffffff;
+  --ib-border: #e2e8f0;
+}
+:where(a, button, input, select, textarea, [role="button"]):focus-visible {
+  outline: 3px solid var(--ib-focus);
+  outline-offset: 3px;
+}
+button, .menu-link, .primary, .ghost {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button { min-height: 42px; }
+input, select, textarea { max-width: 100%; }
+.app-layout { min-height: 100dvh; }
+.main-panel { min-width: 0; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.topbar { gap: 16px; }
+.topbar h1 { overflow-wrap: anywhere; }
+.metrics-grid { align-items: stretch; }
+.metric-card, .page-section-card { min-width: 0; }
+.table-wrap { max-width: 100%; overscroll-behavior-x: contain; }
+.data-table th, .data-table td { overflow-wrap: anywhere; }
+.notice { overflow-wrap: anywhere; }
+.welcome-page { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.welcome-head { padding-top: max(16px, env(safe-area-inset-top)); }
+@media (max-width: 760px) {
+  .app-layout { display: block; }
+  .sidebar { position: static; width: 100%; height: auto; }
+  .sidebar-nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 10px 0 12px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+  }
+  .menu-link { flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap; }
+  .sidebar-foot { display: none; }
+  .main-panel { padding: 16px; }
+  .topbar { align-items: flex-start; flex-wrap: wrap; }
+  .top-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .account-pill { max-width: 100%; overflow-wrap: anywhere; }
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .page-section-card { padding: 16px; }
+  .section-heading { gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+}
+@media (max-width: 420px) {
+  .main-panel { padding: 12px; }
+  .metrics-grid { grid-template-columns: minmax(0, 1fr); }
+  .hero-actions { align-items: stretch; flex-direction: column; }
+  .hero-actions > * { width: 100%; }
+  .topbar h1 { font-size: clamp(1.35rem, 6vw, 1.8rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
