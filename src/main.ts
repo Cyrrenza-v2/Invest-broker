@@ -288,6 +288,24 @@ app.addEventListener('submit', event => {
       const box = document.createElement('div'); box.className = 'notice notice-error'; box.textContent = err(x); form.prepend(box);
     }).finally(() => { if (button) { button.disabled = false; button.textContent = 'Ask Admin AI'; } });
   }
+  if (form.matches('[data-form="profile"]')) {
+    event.preventDefault();
+    if (ROLE !== 'user') return;
+    const fd = new FormData(form);
+    const full_name = String(fd.get('full_name') || '').trim();
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (!full_name) { const box=document.createElement('div'); box.className='notice notice-error'; box.textContent='Enter your full name.'; form.prepend(box); return; }
+    if (button) { button.disabled = true; button.textContent = 'Saving…'; }
+    void edge<Profile>('user-api','profile','POST',{full_name}).then(profile => {
+      d.profile = profile;
+      d.notice = 'Profile update was accepted by the backend.';
+      return render();
+    }).catch(x => {
+      const box=document.createElement('div'); box.className='notice notice-error';
+      box.textContent = 'Profile could not be saved by the current backend: ' + err(x);
+      form.prepend(box);
+    }).finally(() => { if (button) { button.disabled = false; button.textContent = 'Save profile changes'; } });
+  }
   if (form.matches('[data-form="support"]')) {
     event.preventDefault(); const fd = new FormData(form);
     void edge<Row>('user-api','support','POST',{subject:String(fd.get('subject')||''),body:String(fd.get('body')||'')}).then(() => { d.notice = 'Support message saved by the backend.'; return render(); }).catch(x => { d.error = err(x); const box = document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; form.prepend(box); });
