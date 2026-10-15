@@ -1,7 +1,5 @@
-import { inject } from '@vercel/analytics';
 import { isAdmin, supabase, type Profile, type Row, type SupabaseUser } from './supabase';
 
-inject({ mode: import.meta.env.MODE === 'production' ? 'production' : 'development', debug: import.meta.env.MODE !== 'production' });
 type Role = 'user' | 'admin';
 type RecordRow = Row & { id?: string; user_id?: string; currency?: string; status?: string; created_at?: string; amount?: number; debit_amount?: number; credit_amount?: number; description?: string; entry_type?: string; principal?: number; investment_code?: string; deposit_code?: string; withdrawal_code?: string; name?: string; full_name?: string; user_code?: string; approval_status?: string; account_status?: string; kyc_status?: string };
 type AppData = { user: SupabaseUser | null; profile: Profile | null; users: Profile[]; plans: RecordRow[]; wallets: RecordRow[]; adminWallets: RecordRow[]; adminPlans: RecordRow[]; returns: RecordRow[]; investments: RecordRow[]; transactions: RecordRow[]; deposits: RecordRow[]; withdrawals: RecordRow[]; treasury: RecordRow[]; compliance: RecordRow[]; audits: RecordRow[]; summary: Row; aiAnswer: string; aiModel: string; error: string; notice: string };
