@@ -142,7 +142,7 @@ function userContent(p: string): string {
       ['Lost',d.investments.filter(x=>['lost','loss','cancelled','failed'].includes(invStatus(x)))],
     ];
     return metrics(buckets.map(([label,items])=>[String(label),String((items as RecordRow[]).length),'Recorded investment status'] as [string,string,string])) +
-      buckets.map(([label,items])=>panel(String(label)+' investments',table(['Reference','Principal','Plan','Status','Start / maturity'],(items as RecordRow[]).map(x=>[e(x.investment_code || x.id || '—'),e(money(x.principal,x.currency || 'USD')),e(x.name || x.plan_name || 'Investment plan'),status(x.status),e(date(x.maturity_at || x.created_at))]),'No '+String(label).toLowerCase()+' investments recorded.')).join('') +
+      buckets.map(([label,items])=>panel(String(label)+' investments',table(['Reference','Principal','Plan','Status','Start / maturity'],(items as RecordRow[]).map(x=>[e(x.investment_code || x.id || '—'),e(money(x.principal,x.currency || 'USD')),e(x.name || x.plan_name || 'Investment plan'),status(x.status),e(date(x.maturity_at || x.created_at))]),'No '+String(label).toLowerCase()+' investments recorded.'))).join('') +
       '<div class="notice notice-info">Investment records and any profit/loss figures are maintained by the authorized admin. The customer app is read-only for investment management.</div>';
   }
 
