@@ -48,6 +48,30 @@ describe("Invest Broker Worker API", () => {
     expect(response.status).toBe(401);
   });
 
+  it("rejects a missing bearer token on protected endpoints", async () => {
+    const response = await SELF.fetch("https://invest-broker.test/api/v1/operations?accountId=missing-token");
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ error: "unauthorized" });
+  });
+
+  it("rejects an incorrect bearer token without revealing the configured token", async () => {
+    const response = await SELF.fetch("https://invest-broker.test/api/v1/summary?accountId=wrong-token", {
+      headers: { authorization: "Bearer definitely-wrong-token" },
+    });
+    expect(response.status).toBe(401);
+    const body = await response.text();
+    expect(body).not.toContain(TOKEN);
+    expect(body).not.toContain("definitely-wrong-token");
+  });
+
+  it("rejects malformed operation payloads before writing an event", async () => {
+    const response = await postOperation({ accountId: "malformed-test", operationType: "deposit" });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_operation" });
+    const summary = await SELF.fetch("https://invest-broker.test/api/v1/summary?accountId=malformed-test", { headers });
+    expect((await summary.json() as any).totalOperations).toBe(0);
+  });
+
   it("records an operation once and returns the same record for a duplicate", async () => {
     const body = operation("idempotency-test", "deposit-ref-0001");
     const first = await postOperation(body);
