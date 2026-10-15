@@ -6,7 +6,10 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        bindings: { API_TOKEN: "unit-test-only-token" },
+        bindings: {
+            SUPABASE_URL: "https://supabase.test",
+            SUPABASE_PUBLISHABLE_KEY: "test-publishable-key",
+          },
       },
     }),
   ],
