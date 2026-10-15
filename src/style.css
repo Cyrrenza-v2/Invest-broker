@@ -227,3 +227,28 @@ input, select, textarea { max-width: 100%; }
     transition-duration: .01ms !important;
   }
 }
+
+
+/* Four-section customer navigation and wallet-first transaction workspace. */
+.app-layout:has(.sidebar) .sidebar .brand { display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit; padding:0 8px; }
+.app-layout:has(.sidebar) .brand > span:last-child { display:grid; gap:4px; }
+.app-layout:has(.sidebar) .brand small { color:#64748b; font-size:.78rem; }
+.sidebar-nav .menu-link.is-active { color:#1d4ed8; background:#dbeafe; }
+.user-home-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.75fr); gap:18px; align-items:stretch; margin:16px 0; }
+.user-home-hero > div:first-child { padding:20px 0; }
+.user-home-hero .wallet-banner { margin:0; }
+.inline-action { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; margin-top:8px; }
+.wallet-actions-grid,.wallet-methods-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:18px 0; }
+.wallet-action-card { padding:20px; border:1px solid #dce5f0; border-radius:18px; background:#fff; }
+.wallet-action-card h3 { margin:10px 0 6px; }
+.wallet-action-card p,.wallet-methods-grid p { color:#64748b; line-height:1.55; }
+.wallet-action-icon { display:grid; place-items:center; width:42px; height:42px; border-radius:13px; background:#dbeafe; color:#1d4ed8; font-size:1.5rem; font-weight:800; }
+.wallet-methods-grid .page-section-card { min-width:0; }
+.profile-tool-links { display:grid; gap:10px; }
+.profile-tool-links a { display:block; padding:12px 14px; border:1px solid #e2e8f0; border-radius:12px; color:#1d4ed8; text-decoration:none; }
+.stack-form label { display:grid; gap:7px; margin:12px 0; color:#334155; font-weight:700; }
+.stack-form input,.stack-form textarea { width:100%; min-height:44px; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px; background:#fff; color:#172033; }
+@media (max-width:760px) {
+  .user-home-hero { grid-template-columns:minmax(0,1fr); }
+  .wallet-actions-grid,.wallet-methods-grid { grid-template-columns:minmax(0,1fr); }
+}
