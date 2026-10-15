@@ -202,6 +202,7 @@ async function render() {
   if ((ROLE === 'user' && p.startsWith('/admin')) || (ROLE === 'admin' && p.startsWith('/user'))) { app!.innerHTML = shell('<section class="state-card"><h2>Separate workspace</h2><p>This URL belongs to the other workspace. Your current screen was not redirected. Open the correct user or admin app URL to continue.</p></section>', p); return; }
   d.user = await supabase.currentUser();
   if (!d.user) { app!.innerHTML = authPage('login'); return; }
+  if (ROLE === 'user' && isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator account detected</h2><p>This account is restricted from the customer API. Open the Admin CEO app URL to continue.</p><button class="ghost" data-action="logout">Sign out</button></section>',p); return; }
   if (ROLE === 'admin' && !isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator access required</h2><p>This account has no trusted admin role. Sign in with the authorized Admin CEO account.</p></section>',p); return; }
   if (ROLE === 'admin' && currentAssuranceLevel() !== 'aal2') {
     try { await showAdminMfaChallenge(); }
