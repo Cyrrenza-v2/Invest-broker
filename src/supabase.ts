@@ -138,9 +138,21 @@ export const supabase = {
     if (!session?.access_token) return null;
     try {
       return await request<SupabaseUser>('/auth/v1/user', { method: 'GET' });
-    } catch {
-      saveSession(null);
-      return null;
+    } catch (error) {
+      // Keep the current screen and session through refresh/network failures.
+      // Refresh the token only when Supabase explicitly says it is no longer valid.
+      if (error instanceof SupabaseError && (error.status === 401 || error.status === 403) && session.refresh_token) {
+        try {
+          const refreshed = await this.refreshSession();
+          if (refreshed?.access_token) {
+            return await request<SupabaseUser>('/auth/v1/user', { method: 'GET' });
+          }
+        } catch {
+          // A failed refresh must not silently erase a session on a transient
+          // network error. The protected API will still reject expired tokens.
+        }
+      }
+      return session.user ?? null;
     }
   },
   async refreshSession(): Promise<AuthSession | null> {
