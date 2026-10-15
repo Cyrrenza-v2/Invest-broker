@@ -6,7 +6,7 @@ type AppData = { user: SupabaseUser | null; profile: Profile | null; users: Prof
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root not found');
 const host = location.hostname.toLowerCase();
-const isAdminHost = host === 'admin-invest-broker.vercel.app' || host.startsWith('admin-invest-broker-') || host === 'invest-broker-19np.vercel.app' || host.startsWith('invest-broker-19np-');
+const isAdminHost = host === 'admin-invest-broker.pages.dev' || host.startsWith('admin-invest-broker-') || host === 'invest-broker-admin.pages.dev';
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let pendingMfa: { factorId: string; challengeId: string } | null = null;
@@ -224,7 +224,7 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
   event.preventDefault(); const values = new FormData(form); const email = String(values.get('email') || '').trim().toLowerCase(); const password = String(values.get('password') || '');
   const btn = form.querySelector<HTMLButtonElement>('button[type="submit"]'); if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
   try {
-    if (!supabase.configured) throw new Error('Missing Vercel environment variables VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+    if (!supabase.configured) throw new Error('Missing Supabase configuration. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the deployment environment.');
     if (form.dataset.mode === 'register') {
       if (ROLE !== 'user') throw new Error('Admin registration is disabled.');
       await supabase.signUp(email,password,String(values.get('full_name') || '').trim());
