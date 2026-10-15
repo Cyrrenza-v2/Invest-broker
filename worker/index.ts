@@ -55,18 +55,23 @@ function validOperation(value: unknown): value is OperationInput {
 
 async function authenticate(request: Request, env: Env): Promise<{ id: string } | Response> {
   const authorization = request.headers.get("authorization") ?? "";
-  const match = authorization.match(/^Bearer\\s+(.+)$/i);
-  if (!match) return json({ error: "unauthorized" }, 401);
+  const token = authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+  if (!token) return json({ error: "unauthorized" }, 401);
   if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
     return json({ error: "service_not_configured" }, 503);
   }
   let response: Response;
   try {
-    response = await fetch(`${env.SUPABASE_URL.replace(/\\/+$/, "")}/auth/v1/user`, {
+    const supabaseUrl = env.SUPABASE_URL.endsWith("/")
+      ? env.SUPABASE_URL.slice(0, -1)
+      : env.SUPABASE_URL;
+    response = await fetch(`${supabaseUrl}/auth/v1/user`, {
       method: "GET",
       headers: {
         apikey: env.SUPABASE_PUBLISHABLE_KEY,
-        authorization: `Bearer ${match[1]}`,
+        authorization: `Bearer ${token}`,
         accept: "application/json",
       },
     });
