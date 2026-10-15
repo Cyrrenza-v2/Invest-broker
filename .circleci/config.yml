@@ -16,11 +16,12 @@ jobs:
             rm -rf "$source_dir"
             git clone --depth 1 --branch "$branch" https://github.com/Cyrrenza-v2/Invest-broker.git "$source_dir"
             test -s "$source_dir/package.json"
+            test -s "$source_dir/package-lock.json"
             cp -a "$source_dir/." .
             rm -rf "$source_dir"
       - run:
-          name: Install dependencies
-          command: npm install --no-audit --no-fund
+          name: Install locked dependencies
+          command: npm ci --no-audit --no-fund --legacy-peer-deps
       - run:
           name: Type-check and build production assets
           command: npm run build
