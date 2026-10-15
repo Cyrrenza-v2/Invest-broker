@@ -73,6 +73,42 @@ jobs:
           diff -u /tmp/expected.txt /tmp/actual.txt
           echo "Migration filenames match the recorded production history."
 
+  verified-subset-replay:
+    name: Replay only exact-version recovered migrations in isolated local Supabase
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Initialize local Supabase configuration if absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f supabase/config.toml ]]; then
+            npx --yes supabase@latest init
+          fi
+      - name: Isolate the three verified migration files
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cp supabase/migrations/20261010055354_invest_broker_shared_platform_foundation.sql "$tmp/"
+          cp supabase/migrations/20261010060308_invest_broker_double_entry_ledger.sql "$tmp/"
+          cp supabase/migrations/20261010060317_invest_broker_ledger_posting_guard.sql "$tmp/"
+          find supabase/migrations -maxdepth 1 -type f -name '*.sql' -delete
+          cp "$tmp"/*.sql supabase/migrations/
+          ls -1 supabase/migrations
+      - name: Start isolated local Supabase
+        run: npx --yes supabase@latest start
+      - name: Replay verified migration subset from empty database
+        run: npx --yes supabase@latest db reset --local
+      - name: Lint subset schema
+        run: npx --yes supabase@latest db lint --local
+      - name: Stop local Supabase
+        if: always()
+        run: npx --yes supabase@latest stop --no-backup
+
   local-replay:
     name: Replay and lint migrations in isolated local Supabase
     runs-on: ubuntu-latest
