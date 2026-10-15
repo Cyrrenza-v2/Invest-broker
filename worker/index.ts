@@ -47,8 +47,7 @@ function validOperation(value: unknown): value is OperationInput {
     ["deposit", "withdrawal", "investment", "return", "adjustment"].includes(item.operationType ?? "") &&
     Number.isSafeInteger(item.amountMinor) &&
     (item.amountMinor ?? 0) > 0 &&
-    typeof item.currency === "string" &&
-    /^[A-Z]{3}$/.test(item.currency)
+    item.currency === "USD"
   );
 }
 
