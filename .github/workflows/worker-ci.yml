@@ -38,7 +38,8 @@ jobs:
     name: Deploy and probe test Worker
     runs-on: ubuntu-latest
     needs: verify
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    # Enable this job only after the GitHub Cloudflare token is valid for CI runner IPs.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.CLOUDFLARE_DEPLOY_ENABLED == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
