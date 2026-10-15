@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SELF, abortAllDurableObjects } from "cloudflare:test";
 
 const TOKEN = "unit-test-only-token";
+const TEST_USER_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
 const headers = {
   authorization: `Bearer ${TOKEN}`,
   "content-type": "application/json",
@@ -13,25 +15,47 @@ function operation(accountId: string, idempotencyKey: string, overrides: Record<
     idempotencyKey,
     operationType: "deposit",
     amountMinor: 250_000,
-    currency: "NGN",
+    currency: "USD",
     ...overrides,
   };
 }
 
-async function postOperation(body: unknown) {
+async function postOperation(body: unknown, requestHeaders = headers) {
   return SELF.fetch("https://invest-broker.test/api/v1/operations", {
     method: "POST",
-    headers,
+    headers: requestHeaders,
     body: JSON.stringify(body),
   });
 }
 
-afterEach(async () => {
-  // Each test has isolated Worker storage; eviction tests explicitly exercise restart recovery.
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/auth/v1/user") {
+      const requestHeaders = new Headers(init?.headers);
+      if (requestHeaders.get("authorization") !== `Bearer ${TOKEN}` ||
+          requestHeaders.get("apikey") !== "test-publishable-key") {
+        return new Response(JSON.stringify({ message: "Invalid token" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ id: TEST_USER_ID }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response("not found", { status: 404 });
+  }));
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("Invest Broker Worker API", () => {
-  it("exposes a public health endpoint without exposing secrets", async () => {
+  it("exposes a public health endpoint", async () => {
     const response = await SELF.fetch("https://invest-broker.test/health");
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -41,78 +65,90 @@ describe("Invest Broker Worker API", () => {
     });
   });
 
-  it("rejects unauthenticated API requests", async () => {
-    const response = await SELF.fetch("https://invest-broker.test/api/v1/summary?accountId=auth-test", {
-      headers: { "content-type": "application/json" },
-    });
+  it("rejects requests without a bearer token", async () => {
+    const response = await SELF.fetch(
+      `https://invest-broker.test/api/v1/summary?accountId=${TEST_USER_ID}`,
+    );
     expect(response.status).toBe(401);
   });
 
-  it("rejects a missing bearer token on protected endpoints", async () => {
-    const response = await SELF.fetch("https://invest-broker.test/api/v1/operations?accountId=missing-token");
+  it("rejects an invalid or expired Supabase token", async () => {
+    const response = await SELF.fetch(
+      `https://invest-broker.test/api/v1/summary?accountId=${TEST_USER_ID}`,
+      { headers: { authorization: "Bearer wrong-token" } },
+    );
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ error: "unauthorized" });
   });
 
-  it("rejects an incorrect bearer token without revealing the configured token", async () => {
-    const response = await SELF.fetch("https://invest-broker.test/api/v1/summary?accountId=wrong-token", {
-      headers: { authorization: "Bearer definitely-wrong-token" },
-    });
-    expect(response.status).toBe(401);
-    const body = await response.text();
-    expect(body).not.toContain(TOKEN);
-    expect(body).not.toContain("definitely-wrong-token");
+  it("rejects a caller trying to access another user's account", async () => {
+    const response = await SELF.fetch(
+      `https://invest-broker.test/api/v1/summary?accountId=${OTHER_USER_ID}`,
+      { headers },
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "account_forbidden" });
+  });
+
+  it("rejects an operation targeting another user's account before writing", async () => {
+    const response = await postOperation(operation(OTHER_USER_ID, "foreign-ref-001"));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "account_forbidden" });
   });
 
   it("rejects malformed operation payloads before writing an event", async () => {
-    const response = await postOperation({ accountId: "malformed-test", operationType: "deposit" });
+    const response = await postOperation({ accountId: TEST_USER_ID, operationType: "deposit" });
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: "invalid_operation" });
-    const summary = await SELF.fetch("https://invest-broker.test/api/v1/summary?accountId=malformed-test", { headers });
+    const summary = await SELF.fetch(
+      `https://invest-broker.test/api/v1/summary?accountId=${TEST_USER_ID}`,
+      { headers },
+    );
     expect((await summary.json() as any).totalOperations).toBe(0);
   });
 
   it("records an operation once and returns the same record for a duplicate", async () => {
-    const body = operation("idempotency-test", "deposit-ref-0001");
+    const body = operation(TEST_USER_ID, "deposit-ref-0001");
     const first = await postOperation(body);
     const second = await postOperation(body);
-
     expect(first.status).toBe(201);
     expect(second.status).toBe(200);
     expect((await first.json() as any).duplicate).toBe(false);
     expect((await second.json() as any).duplicate).toBe(true);
-
-    const summary = await SELF.fetch("https://invest-broker.test/api/v1/summary?accountId=idempotency-test", { headers });
+    const summary = await SELF.fetch(
+      `https://invest-broker.test/api/v1/summary?accountId=${TEST_USER_ID}`,
+      { headers },
+    );
     expect((await summary.json() as any).totalOperations).toBe(1);
   });
 
   it("rejects reuse of an idempotency key with different operation data", async () => {
-    const first = await postOperation(operation("conflict-test", "operation-ref-0001"));
-    const second = await postOperation(operation("conflict-test", "operation-ref-0001", { amountMinor: 999_999 }));
+    const first = await postOperation(operation(TEST_USER_ID, "operation-ref-0001"));
+    const second = await postOperation(operation(TEST_USER_ID, "operation-ref-0001", { amountMinor: 999_999 }));
     expect(first.status).toBe(201);
     expect(second.status).toBe(409);
   });
 
   it("serializes concurrent duplicate requests without double-recording", async () => {
-    const body = operation("concurrent-test", "concurrent-ref-001");
+    const body = operation(TEST_USER_ID, "concurrent-ref-001");
     const responses = await Promise.all(Array.from({ length: 20 }, () => postOperation(body)));
     const statuses = responses.map((response) => response.status);
     expect(statuses.filter((status) => status === 201)).toHaveLength(1);
     expect(statuses.filter((status) => status === 200)).toHaveLength(19);
-
-    const summary = await SELF.fetch("https://invest-broker.test/api/v1/summary?accountId=concurrent-test", { headers });
+    const summary = await SELF.fetch(
+      `https://invest-broker.test/api/v1/summary?accountId=${TEST_USER_ID}`,
+      { headers },
+    );
     expect((await summary.json() as any).totalOperations).toBe(1);
   });
 
   it("preserves SQLite records after a forced Durable Object restart", async () => {
-    const body = operation("restart-test", "restart-ref-001");
+    const body = operation(TEST_USER_ID, "restart-ref-001");
     const created = await postOperation(body);
     expect(created.status).toBe(201);
-
     await abortAllDurableObjects();
-
     const read = await SELF.fetch(
-      "https://invest-broker.test/api/v1/operations/restart-ref-001?accountId=restart-test",
+      `https://invest-broker.test/api/v1/operations/restart-ref-001?accountId=${TEST_USER_ID}`,
       { headers },
     );
     expect(read.status).toBe(200);
@@ -121,10 +157,10 @@ describe("Invest Broker Worker API", () => {
     expect(result.operation.mode).toBe("test");
   });
 
-  it("validates operation amount, currency, and idempotency key", async () => {
-    const badAmount = await postOperation(operation("validation-test", "validation-ref-001", { amountMinor: -1 }));
-    const badCurrency = await postOperation(operation("validation-test", "validation-ref-002", { currency: "NGN-NGN" }));
-    const badKey = await postOperation(operation("validation-test", "short"));
+  it("validates amount, currency, and idempotency key", async () => {
+    const badAmount = await postOperation(operation(TEST_USER_ID, "validation-ref-001", { amountMinor: -1 }));
+    const badCurrency = await postOperation(operation(TEST_USER_ID, "validation-ref-002", { currency: "USD-USD" }));
+    const badKey = await postOperation(operation(TEST_USER_ID, "short"));
     expect(badAmount.status).toBe(400);
     expect(badCurrency.status).toBe(400);
     expect(badKey.status).toBe(400);
