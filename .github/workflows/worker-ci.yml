@@ -50,19 +50,19 @@ jobs:
         run: npm install --no-audit --no-fund --legacy-peer-deps
       - name: Require Cloudflare credentials
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           INVEST_BROKER_API_TOKEN: ${{ secrets.INVEST_BROKER_API_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           missing=()
-          [[ -n "$CLOUDFLARE_API_TOKEN" ]] || missing+=("CLOUDFLARE_API_TOKEN")
+          [[ -n "$CLOUDFLARE_API_TOKEN" ]] || missing+=("CLOUDFLARE_API_TOKEN (or legacy CLOUDFLARE_TOKEN)")
           [[ -n "$CLOUDFLARE_ACCOUNT_ID" ]] || missing+=("CLOUDFLARE_ACCOUNT_ID")
           [[ -n "$INVEST_BROKER_API_TOKEN" ]] || missing+=("INVEST_BROKER_API_TOKEN")
           if (( ${#missing[@]} )); then
             printf 'ERROR: GitHub Actions did not expose required secret(s): %s\n' "${missing[*]}" >&2
-            echo "Check Settings → Secrets and variables → Actions in Cyrrenza-v2/Invest-broker. If they are Environment secrets, assign them to the environment used by this job or move them to repository Actions secrets. Do not print secret values." >&2
+            echo "These secrets must be available to this push-triggered job as repository Actions secrets, or attached to an environment explicitly referenced by this job. Secret values are never printed." >&2
             exit 1
           fi
       - name: Install Worker API token as Cloudflare secret
@@ -72,7 +72,7 @@ jobs:
       - name: Deploy test-only Worker
         id: deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
