@@ -252,3 +252,42 @@ input, select, textarea { max-width: 100%; }
   .user-home-hero { grid-template-columns:minmax(0,1fr); }
   .wallet-actions-grid,.wallet-methods-grid { grid-template-columns:minmax(0,1fr); }
 }
+
+
+/* Final-phase responsive navigation: phone, tablet, desktop */
+.app-layout { min-width: 0; }
+.app-layout .sidebar { overflow-y: auto; overscroll-behavior: contain; }
+.app-layout .sidebar-nav { min-width: 0; }
+.app-layout .main-panel { min-width: 0; overflow-wrap: anywhere; }
+.topbar, .top-actions { min-width: 0; flex-wrap: wrap; }
+.account-pill { max-width: min(46vw, 320px); overflow-wrap: anywhere; }
+.data-table { min-width: 640px; }
+.table-wrap { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (min-width: 681px) {
+  .app-layout .sidebar-nav { overflow: visible; }
+}
+@media (max-width: 1000px) {
+  .app-layout { grid-template-columns: 210px minmax(0, 1fr); }
+  .app-layout .sidebar { padding: 18px 12px; }
+  .app-layout .main-panel { padding: 22px 18px 36px; }
+}
+@media (max-width: 680px) {
+  .app-layout { display: flex; flex-direction: column; }
+  .app-layout .sidebar { position: relative; top: auto; width: 100%; height: auto; min-height: 0; max-height: none; padding: 12px; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+  .app-layout .sidebar .brand { padding: 0 4px; }
+  .app-layout .sidebar-nav { display: flex; gap: 8px; margin-top: 14px; padding: 0 0 5px; overflow-x: auto; overflow-y: hidden; white-space: nowrap; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+  .app-layout .sidebar-nav .menu-link { flex: 0 0 auto; min-height: 40px; padding: 10px 13px; }
+  .app-layout .sidebar-foot { padding: 12px 5px 0; }
+  .app-layout .main-panel { width: 100%; padding: 18px 12px 30px; }
+  .app-layout .topbar { align-items: flex-start; gap: 12px; }
+  .app-layout .topbar h1 { font-size: 1.22rem; }
+  .app-layout .top-actions { width: 100%; gap: 8px; }
+  .app-layout .account-pill { max-width: 100%; }
+  .app-layout .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-layout .page-section-card { padding: 16px; }
+  .app-layout .data-table { min-width: 580px; }
+}
+@media (max-width: 360px) {
+  .app-layout .metrics-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-layout .main-panel { padding-right: 9px; padding-left: 9px; }
+}
