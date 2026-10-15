@@ -1,4 +1,4 @@
-name: Supabase Migration Safety
+name: Supabase Migration Validation
 
 on:
   pull_request:
@@ -11,27 +11,21 @@ on:
       - "supabase/**"
       - ".github/workflows/supabase-migrations.yml"
   workflow_dispatch:
-    inputs:
-      deploy_production:
-        description: "Deploy migrations to production after validation and environment approval"
-        type: boolean
-        required: true
-        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: supabase-migrations-${{ github.ref }}
+  group: supabase-migration-validation-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   migration-integrity:
-    name: Verify migration history is complete
+    name: Verify complete recorded migration history
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify all recorded production migrations are present
+      - name: Compare repository migrations with recorded production history
         shell: bash
         run: |
           set -euo pipefail
@@ -55,40 +49,40 @@ jobs:
           missing=0
           for file in "${expected[@]}"; do
             if [[ ! -f "supabase/migrations/$file" ]]; then
-              echo "::error file=supabase/migrations/$file::Migration recorded in live Supabase history is missing from Git."
+              echo "::error file=supabase/migrations/$file::Recorded production migration SQL is missing from Git."
               missing=1
             fi
           done
           if [[ "$missing" -ne 0 ]]; then
-            echo "::error::Do not deploy: recover the original SQL for missing migrations from trusted sources first."
+            echo "::error::Migration history is incomplete. Recover originals or approve a separately reviewed baseline plan; do not fabricate historical files."
             exit 1
           fi
           actual_count="$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')"
           if [[ "$actual_count" -ne "${#expected[@]}" ]]; then
-            echo "::error::Expected exactly ${#expected[@]} migration files, found $actual_count."
+            echo "::error::Expected exactly ${#expected[@]} migration files; found $actual_count."
             exit 1
           fi
           printf '%s\n' "${expected[@]}" | sort > /tmp/expected.txt
           find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort > /tmp/actual.txt
           diff -u /tmp/expected.txt /tmp/actual.txt
-          echo "Migration filenames match the recorded production history."
+          echo "All 15 recorded migration filenames are present and match."
 
   verified-subset-replay:
-    name: Replay only exact-version recovered migrations in isolated local Supabase
+    name: Replay exact-version recovered subset in isolated Supabase
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Initialize local Supabase configuration if absent
+      - name: Ensure Supabase CLI configuration exists
         shell: bash
         run: |
           set -euo pipefail
           if [[ ! -f supabase/config.toml ]]; then
             npx --yes supabase@latest init
           fi
-      - name: Isolate the three verified migration files
+      - name: Isolate the three exact-version recovered migrations
         shell: bash
         run: |
           set -euo pipefail
@@ -98,19 +92,19 @@ jobs:
           cp supabase/migrations/20261010060317_invest_broker_ledger_posting_guard.sql "$tmp/"
           find supabase/migrations -maxdepth 1 -type f -name '*.sql' -delete
           cp "$tmp"/*.sql supabase/migrations/
-          ls -1 supabase/migrations
+          test "$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')" = "3"
       - name: Start isolated local Supabase
         run: npx --yes supabase@latest start
-      - name: Replay verified migration subset from empty database
+      - name: Replay recovered subset from an empty database
         run: npx --yes supabase@latest db reset --local
-      - name: Lint subset schema
+      - name: Lint recovered subset schema
         run: npx --yes supabase@latest db lint --local
-      - name: Stop local Supabase
+      - name: Stop isolated Supabase
         if: always()
         run: npx --yes supabase@latest stop --no-backup
 
-  local-replay:
-    name: Replay and lint migrations in isolated local Supabase
+  full-local-replay:
+    name: Replay and lint complete migration history
     runs-on: ubuntu-latest
     needs: migration-integrity
     steps:
@@ -118,56 +112,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Initialize local Supabase configuration if absent
+      - name: Ensure Supabase CLI configuration exists
         shell: bash
         run: |
           set -euo pipefail
           if [[ ! -f supabase/config.toml ]]; then
             npx --yes supabase@latest init
           fi
-      - name: Start isolated local database
+      - name: Start isolated local Supabase
         run: npx --yes supabase@latest start
-      - name: Replay the full migration sequence from an empty database
+      - name: Replay complete migration sequence from an empty database
         run: npx --yes supabase@latest db reset --local
-      - name: Lint the resulting local schema
+      - name: Lint complete local schema
         run: npx --yes supabase@latest db lint --local
-      - name: Stop local Supabase
+      - name: Stop isolated Supabase
         if: always()
         run: npx --yes supabase@latest stop --no-backup
 
-  production-deploy:
-    name: Production migrations (manual dispatch + protected environment)
-    runs-on: ubuntu-latest
-    needs: [migration-integrity, local-replay]
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy_production == true && github.ref == 'refs/heads/main'
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-      - name: Check required deployment configuration
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ -n "$SUPABASE_ACCESS_TOKEN" ]] || { echo "::error::Missing SUPABASE_ACCESS_TOKEN Actions secret."; exit 1; }
-          [[ -n "$SUPABASE_DB_PASSWORD" ]] || { echo "::error::Missing SUPABASE_DB_PASSWORD Actions secret."; exit 1; }
-          [[ -n "$SUPABASE_PROJECT_REF" ]] || { echo "::error::Missing SUPABASE_PROJECT_REF Actions variable."; exit 1; }
-      - name: Link configured Supabase project
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
-      - name: Preview pending migrations before applying
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase db push --dry-run
-      - name: Apply migrations after environment approval
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase db push
+# Intentionally no production migration/deploy job. Production stays gated until
+# the complete migration chain or a separately reviewed baseline plan is approved.
