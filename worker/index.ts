@@ -2,7 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 
 export interface Env {
   LEDGER: DurableObjectNamespace;
-  API_TOKEN?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_PUBLISHABLE_KEY?: string;
   APP_MODE?: string;
 }
 
@@ -49,6 +50,35 @@ function validOperation(value: unknown): value is OperationInput {
     typeof item.currency === "string" &&
     /^[A-Z]{3}$/.test(item.currency)
   );
+}
+
+
+async function authenticate(request: Request, env: Env): Promise<{ id: string } | Response> {
+  const authorization = request.headers.get("authorization") ?? "";
+  const match = authorization.match(/^Bearer\\s+(.+)$/i);
+  if (!match) return json({ error: "unauthorized" }, 401);
+  if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
+    return json({ error: "service_not_configured" }, 503);
+  }
+  let response: Response;
+  try {
+    response = await fetch(`${env.SUPABASE_URL.replace(/\\/+$/, "")}/auth/v1/user`, {
+      method: "GET",
+      headers: {
+        apikey: env.SUPABASE_PUBLISHABLE_KEY,
+        authorization: `Bearer ${match[1]}`,
+        accept: "application/json",
+      },
+    });
+  } catch {
+    return json({ error: "identity_service_unavailable" }, 503);
+  }
+  if (!response.ok) return json({ error: "unauthorized" }, 401);
+  const user = await response.json().catch(() => null) as { id?: unknown } | null;
+  if (!user || typeof user.id !== "string" || !validAccountId(user.id)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+  return { id: user.id };
 }
 
 function sameOperation(existing: OperationRecord, input: OperationInput): boolean {
@@ -173,12 +203,8 @@ const worker = {
     }
 
     if (!url.pathname.startsWith("/api/v1/")) return json({ error: "not_found" }, 404);
-    if (!env.API_TOKEN) return json({ error: "service_not_configured" }, 503);
-
-    const authorization = request.headers.get("authorization") ?? "";
-    if (authorization !== `Bearer ${env.API_TOKEN}`) {
-      return json({ error: "unauthorized" }, 401);
-    }
+    const identity = await authenticate(request, env);
+    if (identity instanceof Response) return identity;
 
     if (request.method === "POST" && url.pathname === "/api/v1/operations") {
       let input: unknown;
@@ -191,6 +217,7 @@ const worker = {
         return json({ error: "invalid_account_id" }, 400);
       }
       const accountId = (input as OperationInput).accountId;
+      if (accountId !== identity.id) return json({ error: "account_forbidden" }, 403);
       const stub = env.LEDGER.getByName(accountId);
       return stub.fetch(new Request("https://ledger.internal/operations", {
         method: "POST",
@@ -203,6 +230,7 @@ const worker = {
         (request.method === "GET" && url.pathname === "/api/v1/summary")) {
       const accountId = url.searchParams.get("accountId");
       if (!validAccountId(accountId)) return json({ error: "invalid_account_id" }, 400);
+      if (accountId !== identity.id) return json({ error: "account_forbidden" }, 403);
       const stub = env.LEDGER.getByName(accountId);
       const targetPath = url.pathname.endsWith("/summary") ? "/summary" : "/operations";
       return stub.fetch(new Request(`https://ledger.internal${targetPath}`));
@@ -212,6 +240,7 @@ const worker = {
     if (request.method === "GET" && operationMatch) {
       const accountId = url.searchParams.get("accountId");
       if (!validAccountId(accountId)) return json({ error: "invalid_account_id" }, 400);
+      if (accountId !== identity.id) return json({ error: "account_forbidden" }, 403);
       const stub = env.LEDGER.getByName(accountId);
       return stub.fetch(new Request(`https://ledger.internal/operations/${encodeURIComponent(operationMatch[1])}`));
     }
