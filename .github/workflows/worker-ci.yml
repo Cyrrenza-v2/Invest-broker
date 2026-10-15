@@ -62,7 +62,7 @@ jobs:
           [[ -n "$CLOUDFLARE_API_TOKEN" ]] || missing+=("CLOUDFLARE_API_TOKEN (or legacy CLOUDFLARE_TOKEN)")
           [[ -n "$CLOUDFLARE_ACCOUNT_ID" ]] || missing+=("CLOUDFLARE_ACCOUNT_ID")
           if (( ${#missing[@]} )); then
-            printf 'ERROR: GitHub Actions did not expose required secret(s): %s\\n' "${missing[*]}" >&2
+            printf 'ERROR: GitHub Actions did not expose required secret(s): %s\n' "${missing[*]}" >&2
             echo "Add the required credentials as repository Actions secrets or attach the referenced environment. Secret values are never printed." >&2
             exit 1
           fi
@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           npx wrangler deploy --config wrangler.jsonc 2>&1 | tee deploy.log
-          url="$(grep -Eo 'https://[A-Za-z0-9.-]+\\.workers\\.dev' deploy.log | head -n 1 || true)"
+          url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | head -n 1 || true)"
           if [[ -z "$url" ]]; then
             echo "ERROR: Wrangler deploy succeeded but no workers.dev URL was found in its output." >&2
             exit 1
