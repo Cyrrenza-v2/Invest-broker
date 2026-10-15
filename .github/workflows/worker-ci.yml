@@ -33,6 +33,18 @@ jobs:
         run: npm run test:worker
       - name: Validate Wrangler configuration
         run: npx wrangler deploy --dry-run --config wrangler.jsonc
+      - name: Verify deployed Worker health and runtime authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker_url="https://invest-broker-api-test.uasianubong.workers.dev"
+          curl --fail --silent --show-error "$worker_url/health"
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' -H 'Authorization: Bearer invalid-ci-probe' "$worker_url/api/v1/summary?accountId=11111111-1111-4111-8111-111111111111")"
+          if [[ "$status" != "401" ]]; then
+            echo "Protected Worker route returned HTTP $status; expected 401 for an invalid Supabase session. A 503 indicates missing runtime configuration." >&2
+            exit 1
+          fi
+          echo "Live Worker health passed and invalid Supabase sessions are rejected (HTTP $status)."
 
   deploy-test-worker:
     name: Deploy and probe test Worker
