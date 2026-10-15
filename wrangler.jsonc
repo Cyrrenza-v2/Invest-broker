@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "invest-broker-api-test",
-  "main": "worker/index.ts",
+  "main": "worker/index.js",
   "compatibility_date": "2026-10-12",
   "vars": {
     "APP_MODE": "test"
