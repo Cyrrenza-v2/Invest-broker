@@ -79,11 +79,15 @@ async function request<T>(path: string, init: RequestInit = {}, auth = true): Pr
   let data: unknown;
   try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
   if (!response.ok) {
-    const message = typeof data === 'object' && data !== null && 'message' in data
-      ? String((data as { message: unknown }).message)
-      : typeof data === 'object' && data !== null && 'msg' in data
-        ? String((data as { msg: unknown }).msg)
-        : `Supabase request failed (${response.status})`;
+    const payload = typeof data === 'object' && data !== null
+      ? data as Record<string, unknown>
+      : null;
+    const detail = payload
+      ? payload.message ?? payload.msg ?? payload.error_description ?? payload.error
+      : typeof data === 'string' && data.trim() ? data.trim() : null;
+    const message = detail !== null && detail !== undefined
+      ? `${path}: ${String(detail)}`
+      : `${path}: Supabase request failed (${response.status})`;
     throw new SupabaseError(message, response.status);
   }
   return data as T;
