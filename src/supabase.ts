@@ -3,6 +3,7 @@ type SupabaseUser = {
   email?: string;
   app_metadata?: Record<string, unknown>;
   user_metadata?: Record<string, unknown>;
+  factors?: MfaFactor[];
 };
 
 type AuthSession = {
@@ -108,7 +109,10 @@ export const supabase = {
     return session;
   },
   async listMfaFactors(): Promise<MfaFactor[]> {
-    const result = await request<MfaFactorResponse>('/auth/v1/factors', { method: 'GET' });
+    // GET /auth/v1/factors is not a supported Supabase Auth route (it returns 405).
+    // Supabase documents the authenticated PostgREST endpoint for factor listing.
+    const result = await request<MfaFactorResponse | MfaFactor[]>('/rest/v1/auth/factors?select=id,factor_type,status,friendly_name');
+    if (Array.isArray(result)) return result;
     return result.all ?? [...(result.totp ?? []), ...(result.phone ?? [])];
   },
   async challengeMfa(factorId: string): Promise<MfaChallenge> {
@@ -143,8 +147,6 @@ export const supabase = {
     try {
       return await request<SupabaseUser>('/auth/v1/user', { method: 'GET' });
     } catch (error) {
-      // Keep the current screen and session through refresh/network failures.
-      // Refresh the token only when Supabase explicitly says it is no longer valid.
       if (error instanceof SupabaseError && (error.status === 401 || error.status === 403) && session.refresh_token) {
         try {
           const refreshed = await this.refreshSession();
@@ -152,8 +154,7 @@ export const supabase = {
             return await request<SupabaseUser>('/auth/v1/user', { method: 'GET' });
           }
         } catch {
-          // A failed refresh must not silently erase a session on a transient
-          // network error. The protected API will still reject expired tokens.
+          // Keep the local session through transient network failures.
         }
       }
       return session.user ?? null;
