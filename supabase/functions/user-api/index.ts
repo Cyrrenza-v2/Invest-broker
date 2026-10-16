@@ -58,6 +58,19 @@ Deno.serve(async req => {
     return json(req,{error:"This account is not active"},403);
   }
   try {
+    if (req.method === "POST" && route === "profile") {
+      const payload = await req.json().catch(() => null);
+      const fullName = typeof payload?.full_name === "string" ? payload.full_name.trim().replace(/\s+/g, " ") : "";
+      if (!fullName || fullName.length > 120) return json(req,{error:"Full name must contain between 1 and 120 characters"},400);
+      const { data, error } = await db.from("profiles")
+        .update({ full_name: fullName, updated_at: new Date().toISOString() })
+        .eq("id", user.id)
+        .select("id,user_code,full_name,phone,kyc_status,account_status,approval_status,created_at,updated_at")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return json(req,{error:"Customer profile was not found"},404);
+      return json(req,{data});
+    }
     if (req.method === "POST" && route === "support") {
       const payload = await req.json().catch(() => null);
       const subject = typeof payload?.subject === "string" ? payload.subject.trim().slice(0,200) : "Customer support";
