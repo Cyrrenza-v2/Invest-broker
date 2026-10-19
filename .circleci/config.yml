@@ -6,9 +6,9 @@ jobs:
       - image: cimg/node:22.0
     working_directory: ~/project
     steps:
-      # Use HTTPS so a missing/empty CircleCI SSH checkout key cannot block a public repo.
+      # The repository is public; HTTPS avoids failures from an empty CircleCI SSH key.
       - run:
-          name: Checkout application source over HTTPS
+          name: Checkout exact application source over HTTPS
           command: |
             set -eu
             branch="${CIRCLE_BRANCH:-main}"
@@ -20,17 +20,31 @@ jobs:
             rm -rf "$source_dir"
       - run:
           name: Install dependencies
-          command: npm install --no-audit --no-fund
+          command: npm install --no-audit --no-fund --legacy-peer-deps
       - run:
-          name: Type-check and build production assets
-          command: npm run build
-      - run:
-          name: Verify Vite build output
+          name: Build customer portal
           command: |
             set -eu
+            VITE_APP_ROLE=user npm run build
             test -s dist/index.html
             test -d dist/assets
             find dist/assets -maxdepth 1 -type f \( -name '*.js' -o -name '*.css' \) | grep -q .
+            mv dist dist-user
+      - run:
+          name: Build admin portal
+          command: |
+            set -eu
+            VITE_APP_ROLE=admin npm run build
+            test -s dist/index.html
+            test -d dist/assets
+            find dist/assets -maxdepth 1 -type f \( -name '*.js' -o -name '*.css' \) | grep -q .
+            mv dist dist-admin
+      - run:
+          name: Test Worker security and ledger behavior
+          command: npm run test:worker
+      - run:
+          name: Validate Wrangler Worker configuration
+          command: npx wrangler deploy --dry-run --config wrangler.jsonc
 
 workflows:
   invest_broker_ci:
