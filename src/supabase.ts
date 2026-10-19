@@ -95,12 +95,22 @@ export const supabase = {
     const session = getSession();
     if (!session?.access_token) return null;
     try {
+      // A cached user object is not proof of an authenticated session. Always
+      // validate the access token with Supabase before allowing protected UI.
       return await request<SupabaseUser>('/auth/v1/user', { method: 'GET' });
     } catch (error) {
       if (error instanceof SupabaseError && (error.status === 401 || error.status === 403) && session.refresh_token) {
-        try { const refreshed = await this.refreshSession(); if (refreshed?.access_token) return await request<SupabaseUser>('/auth/v1/user', { method: 'GET' }); } catch { /* preserve session during transient errors */ }
+        try {
+          const refreshed = await this.refreshSession();
+          if (refreshed?.access_token) return await request<SupabaseUser>('/auth/v1/user', { method: 'GET' });
+        } catch (refreshError) {
+          // Invalid/revoked refresh tokens must not leave a cached session usable.
+          if (refreshError instanceof SupabaseError && [400, 401, 403].includes(refreshError.status ?? 0)) saveSession(null);
+        }
       }
-      return session.user ?? null;
+      // Fail closed on auth failures and network errors; do not authorize from
+      // localStorage alone. A transient outage keeps the refresh token for retry.
+      return null;
     }
   },
   async refreshSession(): Promise<AuthSession | null> {
