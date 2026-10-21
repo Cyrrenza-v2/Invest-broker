@@ -55,3 +55,14 @@ jobs:
 
       - name: Verify admin portal is reachable
         run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-admin.pages.dev/ -o /dev/null
+
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save --package-lock=false --no-audit --no-fund playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Exercise customer and admin navigation in Chromium
+        env:
+          CUSTOMER_PORTAL_URL: https://invest-broker-user.pages.dev
+          ADMIN_PORTAL_URL: https://invest-broker-admin.pages.dev
+        run: node tests/portal-navigation.mjs
