@@ -6,9 +6,9 @@ jobs:
       - image: cimg/node:22.0
     working_directory: ~/project
     steps:
-      # The repository is public; HTTPS avoids failures from an empty CircleCI SSH key.
+      # Use the exact branch CircleCI is building; no SSH key is required for this public repository.
       - run:
-          name: Checkout exact application source over HTTPS
+          name: Checkout source over HTTPS
           command: |
             set -eu
             branch="${CIRCLE_BRANCH:-main}"
@@ -19,8 +19,16 @@ jobs:
             cp -a "$source_dir/." .
             rm -rf "$source_dir"
       - run:
-          name: Install dependencies
-          command: npm install --no-audit --no-fund --legacy-peer-deps
+          name: Verify dependency manifest and lockfile
+          command: |
+            set -eu
+            node -e "const p=require('./package.json'); const l=require('./package-lock.json'); if (JSON.stringify(p.dependencies||{}) !== JSON.stringify(l.packages[''].dependencies||{}) || JSON.stringify(p.devDependencies||{}) !== JSON.stringify(l.packages[''].devDependencies||{})) { console.error('package.json and package-lock.json root dependencies differ'); process.exit(1); }"
+      - run:
+          name: Install locked dependencies
+          command: npm ci --no-audit --no-fund
+      - run:
+          name: Dependency security audit
+          command: npm audit --audit-level=high
       - run:
           name: Build customer portal
           command: |
