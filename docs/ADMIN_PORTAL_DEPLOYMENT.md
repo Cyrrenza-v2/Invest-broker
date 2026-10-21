@@ -1,38 +1,30 @@
-# Admin Portal Deployment Checklist
+# Invest Broker portal deployment checklist
 
-## Purpose
-Deploy the admin portal as a separate Vercel project without changing the existing customer deployment.
+## Hosting target
+Deploy the customer and admin portals through Cloudflare Pages. Do not configure Vercel projects, Vercel analytics, or Vercel Git deployment hooks.
 
-## Vercel project settings
-- Repository: `Cyrrenza-v2/Invest-broker`
-- Project name: `invest-broker-admin`
-- Framework preset: Vite
+- Customer portal custom domain: `invest-broker.com`
+- Admin portal custom domain: `admin.invest-broker.com`
+- Cloudflare Pages project names: `invest-broker-user` and `invest-broker-admin`
 - Build command: `npm run build`
-- Output directory: `dist`
-- Environment variable: `VITE_APP_ROLE=admin`
-- Production branch: `main` (or the approved release branch)
+- Build output directory: `dist`
+- Customer build variable: `VITE_APP_ROLE=user`
+- Admin build variable: `VITE_APP_ROLE=admin`
 
-The existing frontend selects the admin presentation at build time through `VITE_APP_ROLE`. The customer project must retain its own user-role build configuration.
+The two portals must be built separately so each bundle receives its intended role. The admin hostname is recognized by the frontend and must also be allowed by the backend CORS policy.
 
-## Important release gate
-The current `src/main.ts` implementation uses browser `localStorage` and seeded demo accounts. The admin welcome screen states that the preview is not connected to production authentication or real money. Therefore, a successful Vite build is **not** proof that the admin app is production-ready.
+## Release gate
+A successful build or reachable HTML page does not prove that authentication, navigation, data access, or authorization works end to end.
 
-Do not use demo credentials for real operations, and do not enable deposits, withdrawals, treasury changes, or ledger mutations until:
-1. Admin identity and role are verified server-side on every privileged API request.
-2. Admin endpoints use the production Supabase project and enforce authorization/RLS.
-3. User and admin sessions cannot cross portal boundaries.
-4. Ledger mutations are server-authorized, idempotent, and audited.
-5. End-to-end tests verify admin access denial for ordinary users and customer access denial for admin-only actions.
+Before production certification, verify:
+1. Customer sign-in, session expiry, and customer-only data access.
+2. Admin sign-in with MFA/AAL2 and primary-CEO authorization.
+3. Customer accounts cannot call admin APIs or view another customer's records.
+4. Both portals' navigation routes and mobile layouts pass browser tests.
+5. Backend CORS allows only the approved Cloudflare/custom domains and local development.
+6. Cloudflare Pages deployment and custom-domain DNS/HTTPS are verified against the intended commit.
+7. Financial operations remain disabled until the server-side controls, ledger idempotency, and audit trail have been independently verified.
+8. Resolve the documented Supabase migration-history mismatch and review outstanding security warnings.
 
-## Current deployment blocker
-Project creation through the connected Vercel integration returned HTTP 403 (insufficient permission). This is an account/team permission blocker, not a build error. Once project creation is permitted, use the settings above and verify the deployment's READY state and commit SHA before publishing its URL.
-
-## Release verification
-- [ ] Separate Vercel project created and linked to this repository
-- [ ] Admin environment variable configured only on the admin project
-- [ ] Production deployment is READY and points to the approved commit
-- [ ] Admin login and server-side role checks pass
-- [ ] Admin data loads from Supabase rather than browser seed data
-- [ ] Privileged operations are blocked until backend and ledger tests pass
-- [ ] Installable PWA manifest/service worker and app name verified for admin
-- [ ] Customer production URL remains unchanged
+## Current verification limits
+The automated browser smoke test checks unauthenticated welcome, login, and customer registration navigation. It does not sign in to real accounts, verify authenticated dashboards, or exercise financial operations. Do not describe the platform as production-ready until those separate tests pass.
