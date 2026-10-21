@@ -20,6 +20,19 @@
       "new_sqlite_classes": ["LedgerDurableObject"]
     }
   ],
+  "previews": {
+    "vars": {
+      "APP_MODE": "preview"
+    },
+    "durable_objects": {
+      "bindings": [
+        {
+          "name": "LEDGER",
+          "class_name": "LedgerDurableObject"
+        }
+      ]
+    }
+  },
   "observability": {
     "enabled": true
   }
