@@ -22,9 +22,9 @@ The existing app is a TypeScript/Vite single-page application with customer rout
 - Customer and admin roles remain isolated by backend authorization, not merely by hidden navigation.
 
 ## Required release test evidence
-1. pnpm install --frozen-lockfile
-2. pnpm run build
-3. pnpm run test:worker
+1. npm ci
+2. npm run build
+3. npm run test:worker
 4. Run both deployed app URLs and verify the deployed commit matches the tested commit.
 5. With dedicated test accounts, verify customer auth and admin auth/role separation.
 6. Exercise a safe customer request and confirm it appears in the admin view with backend persistence and audit evidence.
@@ -34,4 +34,4 @@ The existing app is a TypeScript/Vite single-page application with customer rout
 10. Test installed Android PWA behavior on phone and tablet.
 
 ## Current limitations
-This UI change does not reconstruct missing historical database migrations, does not run a browser/device end-to-end suite, does not configure missing production secrets, and does not build signed Android APKs. A Vercel deployment marked READY is not sufficient evidence for end-to-end correctness. Do not describe the release as production-ready until the required evidence above is recorded.
+This UI change does not reconstruct missing historical database migrations, does not run a browser/device end-to-end suite, does not configure missing production secrets, and does not build signed Android APKs. A hosting deployment marked READY is not sufficient evidence for end-to-end correctness. Do not describe the release as production-ready until the required evidence above is recorded.
