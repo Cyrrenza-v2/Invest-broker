@@ -13,7 +13,24 @@ let pendingMfa: { factorId: string; challengeId: string } | null = null;
 const CAPTCHA_PROVIDER = String(import.meta.env.VITE_CAPTCHA_PROVIDER || 'turnstile').toLowerCase();
 const CAPTCHA_SITE_KEY = String(import.meta.env.VITE_CAPTCHA_SITE_KEY || '').trim();
 let captchaScriptPromise: Promise<void> | null = null;
-function captchaTokenFor(form: HTMLFormElement): string { return String(form.dataset.captchaToken || '').trim(); }
+let captchaWidgetId: string | number | null = null;
+function captchaTokenFor(form: HTMLFormElement): string {
+  // Read the provider's live response at submit time, not only the callback.
+  // This avoids losing the token when the widget callback fires before a rerender.
+  const w = window as any;
+  try {
+    const response = CAPTCHA_PROVIDER === 'hcaptcha' && w.hcaptcha && captchaWidgetId !== null
+      ? w.hcaptcha.getResponse(captchaWidgetId)
+      : CAPTCHA_PROVIDER === 'turnstile' && w.turnstile && captchaWidgetId !== null
+        ? w.turnstile.getResponse(captchaWidgetId)
+        : '';
+    const token = String(response || form.dataset.captchaToken || '').trim();
+    if (token) form.dataset.captchaToken = token;
+    return token;
+  } catch {
+    return String(form.dataset.captchaToken || '').trim();
+  }
+}
 async function loadCaptchaScript(): Promise<void> {
   if (captchaScriptPromise) return captchaScriptPromise;
   captchaScriptPromise = new Promise((resolve, reject) => {
@@ -30,12 +47,13 @@ async function mountCaptcha(): Promise<void> {
   const container = form?.querySelector<HTMLElement>('[data-captcha-widget]');
   if (!form || !container) return;
   form.dataset.captchaToken = '';
+  captchaWidgetId = null;
   if (!CAPTCHA_SITE_KEY) { container.innerHTML = '<p class="captcha-missing">Supabase CAPTCHA is enabled, but the public site key is missing. Configure VITE_CAPTCHA_SITE_KEY and VITE_CAPTCHA_PROVIDER in both Cloudflare Pages projects. Authentication is blocked until a valid challenge can be completed.</p>'; return; }
   try {
     await loadCaptchaScript(); if (!container.isConnected) return;
     const w = window as any; const callback = (token: string) => { form.dataset.captchaToken = token; }; const expired = () => { form.dataset.captchaToken = ''; };
-    if (CAPTCHA_PROVIDER === 'hcaptcha' && w.hcaptcha) w.hcaptcha.render(container, { sitekey: CAPTCHA_SITE_KEY, callback, 'expired-callback': expired, 'error-callback': expired });
-    else if (CAPTCHA_PROVIDER === 'turnstile' && w.turnstile) w.turnstile.render(container, { sitekey: CAPTCHA_SITE_KEY, callback, 'expired-callback': expired, 'error-callback': expired, theme: 'dark' });
+    if (CAPTCHA_PROVIDER === 'hcaptcha' && w.hcaptcha) captchaWidgetId = w.hcaptcha.render(container, { sitekey: CAPTCHA_SITE_KEY, callback, 'expired-callback': expired, 'error-callback': expired });
+    else if (CAPTCHA_PROVIDER === 'turnstile' && w.turnstile) captchaWidgetId = w.turnstile.render(container, { sitekey: CAPTCHA_SITE_KEY, callback, 'expired-callback': expired, 'error-callback': expired, theme: 'dark' });
     else throw new Error('CAPTCHA provider must match Supabase Auth settings: use "turnstile" or "hcaptcha".');
   } catch (error) { container.innerHTML = '<p class="captcha-missing">' + e(error instanceof Error ? error.message : 'CAPTCHA could not be initialized.') + '</p>'; }
 }
@@ -264,6 +282,8 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
       if (!supabase.session()) { renderAuthPage('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
       d.user = await supabase.currentUser(); go('/user/dashboard'); return;
     }
+    // Supabase Auth requires gotrue_meta_security.captcha_token. Pass only a
+    // fresh provider response; never retry without CAPTCHA or bypass protection.
     let session = await supabase.signIn(email,password,captchaToken); let user = session.user;
     if (ROLE === 'admin' && !isAdmin(user) && email === 'udofiaasianubong583@gmail.com') {
       await supabase.invoke('admin-bootstrap',{}); session = await supabase.refreshSession() || session; user = await supabase.currentUser() || user;
