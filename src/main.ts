@@ -10,6 +10,36 @@ const isAdminHost = host === 'admin-invest-broker.vercel.app' || host === 'admin
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let pendingMfa: { factorId: string; challengeId: string } | null = null;
+const CAPTCHA_PROVIDER = String(import.meta.env.VITE_CAPTCHA_PROVIDER || 'turnstile').toLowerCase();
+const CAPTCHA_SITE_KEY = String(import.meta.env.VITE_CAPTCHA_SITE_KEY || '').trim();
+let captchaScriptPromise: Promise<void> | null = null;
+function captchaTokenFor(form: HTMLFormElement): string { return String(form.dataset.captchaToken || '').trim(); }
+async function loadCaptchaScript(): Promise<void> {
+  if (captchaScriptPromise) return captchaScriptPromise;
+  captchaScriptPromise = new Promise((resolve, reject) => {
+    const src = CAPTCHA_PROVIDER === 'hcaptcha' ? 'https://js.hcaptcha.com/1/api.js?render=explicit' : 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    const existing = document.querySelector<HTMLScriptElement>('script[data-invest-broker-captcha]');
+    if (existing) { if ((window as any).turnstile || (window as any).hcaptcha) { resolve(); return; } existing.addEventListener('load', () => resolve(), { once: true }); existing.addEventListener('error', () => reject(new Error('CAPTCHA provider script failed to load.')), { once: true }); return; }
+    const script = document.createElement('script'); script.src = src; script.async = true; script.defer = true; script.dataset.investBrokerCaptcha = 'true';
+    script.onload = () => resolve(); script.onerror = () => reject(new Error('CAPTCHA provider script failed to load. Check network access or content blockers.')); document.head.appendChild(script);
+  });
+  return captchaScriptPromise;
+}
+async function mountCaptcha(): Promise<void> {
+  const form = app?.querySelector<HTMLFormElement>('[data-form="auth"]');
+  const container = form?.querySelector<HTMLElement>('[data-captcha-widget]');
+  if (!form || !container) return;
+  form.dataset.captchaToken = '';
+  if (!CAPTCHA_SITE_KEY) { container.innerHTML = '<p class="captcha-missing">Supabase CAPTCHA is enabled, but the public site key is missing. Configure VITE_CAPTCHA_SITE_KEY and VITE_CAPTCHA_PROVIDER in both Cloudflare Pages projects. Authentication is blocked until a valid challenge can be completed.</p>'; return; }
+  try {
+    await loadCaptchaScript(); if (!container.isConnected) return;
+    const w = window as any; const callback = (token: string) => { form.dataset.captchaToken = token; }; const expired = () => { form.dataset.captchaToken = ''; };
+    if (CAPTCHA_PROVIDER === 'hcaptcha' && w.hcaptcha) w.hcaptcha.render(container, { sitekey: CAPTCHA_SITE_KEY, callback, 'expired-callback': expired, 'error-callback': expired });
+    else if (CAPTCHA_PROVIDER === 'turnstile' && w.turnstile) w.turnstile.render(container, { sitekey: CAPTCHA_SITE_KEY, callback, 'expired-callback': expired, 'error-callback': expired, theme: 'dark' });
+    else throw new Error('CAPTCHA provider must match Supabase Auth settings: use "turnstile" or "hcaptcha".');
+  } catch (error) { container.innerHTML = '<p class="captcha-missing">' + e(error instanceof Error ? error.message : 'CAPTCHA could not be initialized.') + '</p>'; }
+}
+function renderAuthPage(mode: 'login'|'register'): void { app!.innerHTML = authPage(mode); void mountCaptcha(); }
 let sequence = 0;
 const e = (v: unknown): string => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
 const date = (v: unknown) => v ? new Date(String(v)).toLocaleString() : '—';
@@ -42,17 +72,17 @@ function shell(body: string, active: string) {
   const links = ROLE === 'user' ? userLinks : adminLinks;
   return '<div class="app-layout ' + (ROLE === 'admin' ? 'portal-admin' : 'portal-customer') + '"><aside class="sidebar"><a class="brand" href="#/welcome"><span class="brand-mark"><img src="/icons/invest-broker-mark.svg" alt="" width="36" height="36" /></span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer workspace' : 'Admin CEO workspace') + '</small></span></a><nav class="sidebar-nav">' +
     links.map(l => '<a class="menu-link ' + (active === l[0] ? 'is-active' : '') + '" href="#' + l[0] + '">' + l[1] + '</a>').join('') +
-    '</nav><div class="sidebar-foot"><span class="live-dot"></span> Authenticated workspace</div></aside><main class="main-panel"><header class="topbar"><div><p class="eyebrow">' + (ROLE === 'user' ? 'Customer portal' : 'Restricted operations') + '</p><h1>' + e(title(active)) + '</h1></div><div class="top-actions"><span class="account-pill">' + e(d.profile?.full_name || d.user?.email || 'Account') + '</span><button class="ghost" data-action="refresh">Refresh</button><button class="ghost" data-action="logout">Sign out</button></div></header>' +
+    '</nav><div class="sidebar-foot"><span class="live-dot"></span> Authenticated workspace</div></aside><nav class="mobile-nav">' + links.slice(0,4).map(l => '<a class="' + (active === l[0] ? 'is-active' : '') + '" href="#' + l[0] + '">' + e(l[1]) + '</a>').join('') + '<button type="button" data-action="toggle-nav">More</button></nav><main class="main-panel"><header class="topbar"><div><p class="eyebrow">' + (ROLE === 'user' ? 'Customer portal' : 'Restricted operations') + '</p><h1>' + e(title(active)) + '</h1></div><div class="top-actions"><span class="account-pill">' + e(d.profile?.full_name || d.user?.email || 'Account') + '</span><button class="ghost" data-action="refresh">Refresh</button><button class="ghost" data-action="logout">Sign out</button></div></header>' +
     (d.error ? '<div class="notice notice-error">' + e(d.error) + '</div>' : '') + (d.notice ? '<div class="notice notice-info">' + e(d.notice) + '</div>' : '') + body +
     '<footer class="app-footer">Account records are returned by Supabase-authenticated APIs. No demo financial balances are substituted.</footer></main></div>';
 }
 function welcome() {
-  return '<main class="welcome-page"><header class="welcome-head"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>Secure investment workspace</small></span></a><span class="secure-label">Supabase-backed access</span></header><section class="welcome-hero"><div class="hero-copy"><p class="eyebrow">' + (ROLE === 'user' ? 'Your account, clearly presented' : 'Private operations console') + '</p><h1>' + (ROLE === 'user' ? 'A clearer view of your investment journey.' : 'Run operations with clear controls.') + '</h1><p>' + (ROLE === 'user' ? 'Sign in to see your account profile, USD wallet availability, investments, and ledger activity.' : 'Review customer applications, investments, deposits, withdrawals, treasury, compliance, and audit information.') + '</p><div class="hero-actions"><button class="primary" data-action="route" data-route="' + (ROLE === 'user' ? '/login/user' : '/login/admin') + '">Sign in</button>' + (ROLE === 'user' ? '<button class="ghost" data-action="route" data-route="/register/user">Create customer account</button>' : '') + '</div><p class="small-text muted">No simulated balances, payments, or approvals.</p></div><div class="hero-art"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-card"><span class="art-icon">IB</span><small>ACCOUNT SECURITY</small><strong>Authenticated access</strong><span class="art-line"></span><span class="art-line short"></span><div class="art-footer"><span>Supabase Auth</span><span class="live-dot"></span></div></div></div></section><section class="welcome-features"><article><span>01</span><h3>' + (ROLE === 'user' ? 'Your account data' : 'Customer oversight') + '</h3><p>Data is fetched after authentication and filtered by backend permissions.</p></article><article><span>02</span><h3>' + (ROLE === 'user' ? 'USD-only display' : 'Ledger-aware controls') + '</h3><p>' + (ROLE === 'user' ? 'NGN wallet records are never converted or presented as USD.' : 'Money movement remains server-authorized; this interface does not post ledger entries.') + '</p></article><article><span>03</span><h3>Clear status</h3><p>Pending access or backend errors are shown without inventing a success.</p></article></section></main>';
+  return '<main class="welcome-page"><header class="welcome-head"><a class="brand" href="#/welcome"><span class="brand-mark"><img src="/icons/invest-broker-mark.svg" alt="" width="44" height="44"></span><span><strong>Invest Broker</strong><small>Secure investment workspace</small></span></a><span class="secure-label">Supabase-backed access</span></header><section class="welcome-hero"><div class="hero-copy"><p class="eyebrow">' + (ROLE === 'user' ? 'Your account, clearly presented' : 'Private operations console') + '</p><h1>' + (ROLE === 'user' ? 'A clearer view of your investment journey.' : 'Run operations with clear controls.') + '</h1><p>' + (ROLE === 'user' ? 'Sign in to see your account profile, USD wallet availability, investments, and ledger activity.' : 'Review customer applications, investments, deposits, withdrawals, treasury, compliance, and audit information.') + '</p><div class="hero-actions"><button class="primary" data-action="route" data-route="' + (ROLE === 'user' ? '/login/user' : '/login/admin') + '">Sign in</button>' + (ROLE === 'user' ? '<button class="ghost" data-action="route" data-route="/register/user">Create customer account</button>' : '') + '</div><p class="small-text muted">No simulated balances, payments, or approvals.</p></div><div class="hero-art"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-card"><span class="art-icon">IB</span><small>ACCOUNT SECURITY</small><strong>Authenticated access</strong><span class="art-line"></span><span class="art-line short"></span><div class="art-footer"><span>Supabase Auth</span><span class="live-dot"></span></div></div></div></section><section class="welcome-features"><article><span>01</span><h3>' + (ROLE === 'user' ? 'Your account data' : 'Customer oversight') + '</h3><p>Data is fetched after authentication and filtered by backend permissions.</p></article><article><span>02</span><h3>' + (ROLE === 'user' ? 'USD-only display' : 'Ledger-aware controls') + '</h3><p>' + (ROLE === 'user' ? 'NGN wallet records are never converted or presented as USD.' : 'Money movement remains server-authorized; this interface does not post ledger entries.') + '</p></article><article><span>03</span><h3>Clear status</h3><p>Pending access or backend errors are shown without inventing a success.</p></article></section></main>';
 }
 function authPage(mode: 'login'|'register') {
-  return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer portal' : 'Admin CEO portal') + '</small></span></a><section class="auth-card"><p class="eyebrow">' + (ROLE === 'user' ? 'Customer access' : 'Restricted administrator access') + '</p><h1>' + (mode === 'login' ? 'Welcome back' : 'Create your account') + '</h1><p class="muted">' + (mode === 'login' ? 'Sign in using your Supabase account.' : 'New accounts remain pending administrator approval.') + '</p><form data-form="auth" data-mode="' + mode + '">' +
+  return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark"><img src="/icons/invest-broker-mark.svg" alt="" width="44" height="44"></span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer portal' : 'Admin CEO portal') + '</small></span></a><section class="auth-card"><p class="eyebrow">' + (ROLE === 'user' ? 'Customer access' : 'Restricted administrator access') + '</p><h1>' + (mode === 'login' ? 'Welcome back' : 'Create your account') + '</h1><p class="muted">' + (mode === 'login' ? 'Sign in using your Supabase account.' : 'New accounts remain pending administrator approval.') + '</p><form data-form="auth" data-mode="' + mode + '">' +
     (mode === 'register' ? '<label>Full name<input name="full_name" autocomplete="name" required maxlength="120" placeholder="Your full name"></label>' : '') +
-    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
+    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><div class="captcha-wrap"><div data-captcha-widget aria-label="Human verification challenge"></div><p class="captcha-note">Complete the security check before continuing.</p></div><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
     (mode === 'login' && ROLE === 'user' ? 'New here? <a href="#/register/user">Create an account</a>' : mode === 'register' ? '<a href="#/login/user">Already registered? Sign in</a>' : '<a href="#/welcome">Back to welcome</a>') +
     '</p><p class="small-text muted">Admin access comes from trusted server-side role metadata, never from a form selection.</p></section></main>';
 }
@@ -78,7 +108,7 @@ async function showAdminMfaChallenge(): Promise<void> {
   app!.innerHTML = adminMfaPage();
 }
 function adminMfaPage() {
-  return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>Admin CEO two-step verification</small></span></a><section class="auth-card"><p class="eyebrow">Second verification required</p><h1>Verify it’s you</h1><p class="muted">Enter the current 6-digit code from your enrolled authenticator app. The backend will not release the admin dashboard until this verification succeeds.</p><form data-form="mfa"><label>Authenticator code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000"></label><button class="primary full-width" type="submit">Verify and open admin dashboard</button></form><p class="auth-switch"><a href="#/login/admin" data-action="cancel-mfa">Cancel and sign in again</a></p><p class="small-text muted">Verification is checked by Supabase Auth and the protected admin API.</p></section></main>';
+  return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark"><img src="/icons/invest-broker-mark.svg" alt="" width="44" height="44"></span><span><strong>Invest Broker</strong><small>Admin CEO two-step verification</small></span></a><section class="auth-card"><p class="eyebrow">Second verification required</p><h1>Verify it’s you</h1><p class="muted">Enter the current 6-digit code from your enrolled authenticator app. The backend will not release the admin dashboard until this verification succeeds.</p><form data-form="mfa"><label>Authenticator code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000"></label><button class="primary full-width" type="submit">Verify and open admin dashboard</button></form><p class="auth-switch"><a href="#/login/admin" data-action="cancel-mfa">Cancel and sign in again</a></p><p class="small-text muted">Verification is checked by Supabase Auth and the protected admin API.</p></section></main>';
 }
 function pendingPage() {
   return '<section class="state-card"><div class="state-symbol">…</div><p class="eyebrow">Application status</p><h2>' + (d.profile?.approval_status === 'rejected' ? 'Application not approved' : 'Waiting for account approval') + '</h2><p>Account access requires approval and activation by an authorized administrator.</p><div class="status-row"><span>Approval</span>' + status(d.profile?.approval_status) + '</div><div class="status-row"><span>Account</span>' + status(d.profile?.account_status) + '</div><button class="ghost" data-action="refresh">Check status</button><button class="ghost" data-action="logout">Sign out</button></section>';
@@ -197,16 +227,16 @@ async function render() {
   if (p === '/welcome') { app!.innerHTML = welcome(); return; }
   if (['/login/user','/login/admin','/register/user','/register/admin'].includes(p)) {
     if ((p.includes('/admin') ? 'admin' : 'user') !== ROLE) { go('/welcome'); return; }
-    app!.innerHTML = authPage(p.startsWith('/register') ? 'register' : 'login'); return;
+    renderAuthPage(p.startsWith('/register') ? 'register' : 'login'); return;
   }
   if ((ROLE === 'user' && p.startsWith('/admin')) || (ROLE === 'admin' && p.startsWith('/user'))) { app!.innerHTML = shell('<section class="state-card"><h2>Separate workspace</h2><p>This URL belongs to the other workspace. Your current screen was not redirected. Open the correct user or admin app URL to continue.</p></section>', p); return; }
   d.user = await supabase.currentUser();
-  if (!d.user) { app!.innerHTML = authPage('login'); return; }
+  if (!d.user) { renderAuthPage('login'); return; }
   if (ROLE === 'user' && isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator account detected</h2><p>This account is restricted from the customer API. Open the Admin CEO app URL to continue.</p><button class="ghost" data-action="logout">Sign out</button></section>',p); return; }
   if (ROLE === 'admin' && !isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator access required</h2><p>This account has no trusted admin role. Sign in with the authorized Admin CEO account.</p></section>',p); return; }
   if (ROLE === 'admin' && currentAssuranceLevel() !== 'aal2') {
     try { await showAdminMfaChallenge(); }
-    catch (x) { d.error = err(x); app!.innerHTML = authPage('login'); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.auth-card')?.prepend(box); }
+    catch (x) { d.error = err(x); renderAuthPage('login'); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.auth-card')?.prepend(box); }
     return;
   }
   app!.innerHTML = shell('<section class="state-card"><div class="spinner"></div><h2>Loading account data</h2><p>Fetching authorized records from Supabase…</p></section>',p);
@@ -222,17 +252,19 @@ async function render() {
   }
 }
 async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
-  event.preventDefault(); const values = new FormData(form); const email = String(values.get('email') || '').trim().toLowerCase(); const password = String(values.get('password') || '');
+  event.preventDefault(); const values = new FormData(form); const email = String(values.get('email') || '').trim().toLowerCase(); const password = String(values.get('password') || ''); const captchaToken = captchaTokenFor(form);
   const btn = form.querySelector<HTMLButtonElement>('button[type="submit"]'); if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
   try {
     if (!supabase.configured) throw new Error('Missing Supabase configuration. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the deployment environment.');
+    if (!CAPTCHA_SITE_KEY) throw new Error('CAPTCHA protection is enabled, but VITE_CAPTCHA_SITE_KEY is not configured in this deployment. Configure the provider site key before authentication.');
+    if (!captchaToken) throw new Error('Complete the CAPTCHA challenge before continuing. If no challenge appears, verify the configured CAPTCHA provider and site key.');
     if (form.dataset.mode === 'register') {
       if (ROLE !== 'user') throw new Error('Admin registration is disabled.');
-      await supabase.signUp(email,password,String(values.get('full_name') || '').trim());
-      if (!supabase.session()) { app!.innerHTML = authPage('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
+      await supabase.signUp(email,password,String(values.get('full_name') || '').trim(),captchaToken);
+      if (!supabase.session()) { renderAuthPage('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
       d.user = await supabase.currentUser(); go('/user/dashboard'); return;
     }
-    let session = await supabase.signIn(email,password); let user = session.user;
+    let session = await supabase.signIn(email,password,captchaToken); let user = session.user;
     if (ROLE === 'admin' && !isAdmin(user) && email === 'udofiaasianubong583@gmail.com') {
       await supabase.invoke('admin-bootstrap',{}); session = await supabase.refreshSession() || session; user = await supabase.currentUser() || user;
     }
@@ -251,13 +283,13 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
     d.error = invalidCredentials && ROLE === 'user'
       ? 'We could not sign you in. Check that this email is registered in this Invest Broker project and that the password is correct. If you just registered, confirm your email first. If you still cannot sign in, use Forgot password or contact support.'
       : rawMessage.replace(/^\/auth\/v1\/[^:]+:\s*/i, '');
-    app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login');
+    renderAuthPage(form.dataset.mode === 'register' ? 'register' : 'login');
     const box = document.createElement('div'); box.className = 'notice notice-error'; box.setAttribute('role', 'alert'); box.textContent = d.error; app!.querySelector('.auth-card')?.prepend(box);
   } finally { if (btn) { btn.disabled = false; btn.textContent = form.dataset.mode === 'register' ? 'Create customer account' : 'Sign in securely'; } }
 }
 async function mfaSubmit(event: SubmitEvent, form: HTMLFormElement) {
   event.preventDefault();
-  if (ROLE !== 'admin' || !pendingMfa) { app!.innerHTML = authPage('login'); return; }
+  if (ROLE !== 'admin' || !pendingMfa) { renderAuthPage('login'); return; }
   const code = String(new FormData(form).get('code') || '').replace(/\s/g, '');
   if (!/^\d{6}$/.test(code)) { const box=document.createElement('div'); box.className='notice notice-error'; box.textContent='Enter the 6-digit code from your authenticator app.'; form.prepend(box); return; }
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
@@ -318,6 +350,7 @@ app.addEventListener('submit', event => {
 app.addEventListener('click', event => {
   const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]'); if (!target) return;
   const action = target.dataset.action;
+  if (action === 'toggle-nav') { app!.querySelector('.app-layout')?.classList.toggle('sidebar-open'); return; }
   if (action === 'cancel-mfa') { pendingMfa = null; void supabase.signOut().finally(() => go('/login/admin')); return; }
   if (action === 'route' && target.dataset.route) { go(target.dataset.route); return; }
   if (action === 'refresh') { void render(); return; }
