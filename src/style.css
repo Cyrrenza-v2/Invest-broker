@@ -426,3 +426,8 @@ input, select, textarea { max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .portal-customer .metric-card { transition: none; }
 }
+
+/* Invest Broker brand mark shared by customer and admin portals. */
+.brand-mark { overflow: hidden; padding: 4px; }
+.brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.portal-admin .brand-mark { background: linear-gradient(140deg, #172b49, #0f766e); border: 1px solid #31506d; }
