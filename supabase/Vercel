@@ -1,0 +1,10 @@
+git checkout -b remove-vercel-deployment
+git grep -niE 'vercel|VERCEL_TOKEN|VERCEL_ORG_ID|VERCEL_PROJECT_ID' -- \
+  ':!pnpm-lock.yaml' ':!package-lock.json' || true
+find .github/workflows -maxdepth 1 -type f -print
+git diff --check
+git diff
+npm ci --legacy-peer-deps
+npm run build
+npm run test:worker
+npx wrangler deploy --dry-run --config wrangler.jsonc
