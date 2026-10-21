@@ -291,3 +291,143 @@ input, select, textarea { max-width: 100%; }
   .app-layout .metrics-grid { grid-template-columns: minmax(0, 1fr); }
   .app-layout .main-panel { padding-right: 9px; padding-left: 9px; }
 }
+
+
+/* Primary portal experience: distinct customer and restricted admin workspaces. */
+.app-layout.portal-customer {
+  --portal-bg: #f5f8fc;
+  --portal-surface: #ffffff;
+  --portal-text: #14233b;
+  --portal-muted: #66758b;
+  --portal-line: #e0e8f2;
+  --portal-accent: #2563eb;
+  background: var(--portal-bg);
+  color: var(--portal-text);
+}
+.portal-customer .sidebar { background: var(--portal-surface); border-color: var(--portal-line); }
+.portal-customer .menu-link { min-height: 44px; border-radius: 12px; }
+.portal-customer .menu-link.is-active { color: #1d4ed8; background: #eaf1ff; box-shadow: inset 3px 0 #2563eb; }
+.portal-customer .topbar { align-items: center; }
+.portal-customer .user-home-hero {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(20px, 3vw, 32px);
+  border: 1px solid #dce7f5;
+  border-radius: 22px;
+  background: radial-gradient(ellipse at 95% 0%, #dbeafe 0, transparent 42%), linear-gradient(125deg, #fff, #f4f8ff);
+}
+.portal-customer .user-home-hero > div:first-child { padding: 8px 0; }
+.portal-customer .user-home-hero h2 { max-width: 18ch; margin: 8px 0 12px; color: #14233b; }
+.portal-customer .wallet-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid #1d4ed8;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #1e40af, #2563eb 70%, #0f766e);
+  color: #fff;
+  box-shadow: 0 16px 35px #1d4ed824;
+}
+.portal-customer .wallet-banner .eyebrow,
+.portal-customer .wallet-banner p { color: #dbeafe; }
+.portal-customer .wallet-banner h2 { margin: 8px 0; color: #fff; font-size: clamp(1.25rem, 2vw, 1.8rem); }
+.portal-customer .wallet-currency { display: grid; place-items: center; flex: 0 0 54px; width: 54px; height: 54px; border: 1px solid #ffffff55; border-radius: 16px; background: #ffffff1a; font-weight: 800; }
+.portal-customer .metric-card { border-top: 3px solid #2563eb; transition: transform .18s ease, box-shadow .18s ease; }
+.portal-customer .metric-card:hover { transform: translateY(-2px); box-shadow: 0 14px 30px #132b4b10; }
+.portal-customer .page-section-card { box-shadow: 0 10px 28px #132b4b06; }
+.portal-customer .app-footer { padding: 20px 4px 0; color: #748197; font-size: .75rem; line-height: 1.5; }
+
+.app-layout.portal-admin {
+  --portal-bg: #0b1220;
+  --portal-surface: #111c2e;
+  --portal-surface-raised: #16243a;
+  --portal-text: #e6edf7;
+  --portal-muted: #9aabc2;
+  --portal-line: #26364d;
+  --portal-accent: #60a5fa;
+  min-height: 100vh;
+  background: var(--portal-bg);
+  color: var(--portal-text);
+}
+.portal-admin .sidebar { background: #0e1828; border-color: var(--portal-line); }
+.portal-admin .brand,
+.portal-admin .brand strong,
+.portal-admin .topbar h1,
+.portal-admin .section-heading h3,
+.portal-admin .metric-card h3 { color: var(--portal-text); }
+.portal-admin .brand small,
+.portal-admin .eyebrow,
+.portal-admin .sidebar-foot,
+.portal-admin .metric-card p,
+.portal-admin .metric-card span,
+.portal-admin .app-footer { color: var(--portal-muted); }
+.portal-admin .topbar { border-color: var(--portal-line); }
+.portal-admin .account-pill,
+.portal-admin .page-section-card,
+.portal-admin .metric-card,
+.portal-admin .wallet-action-card {
+  border-color: var(--portal-line);
+  background: var(--portal-surface);
+  color: var(--portal-text);
+  box-shadow: 0 12px 30px #00000012;
+}
+.portal-admin .menu-link { color: #b5c3d7; }
+.portal-admin .menu-link:hover { color: #fff; background: #1c2b41; }
+.portal-admin .menu-link.is-active { color: #bfdbfe; background: #172e4b; box-shadow: inset 3px 0 #60a5fa; }
+.portal-admin .ghost { color: #dbe7f7; background: #1c2b41; border: 1px solid #31445e; }
+.portal-admin .ghost:hover { background: #263a55; }
+.portal-admin .primary { color: #081323; background: #93c5fd; }
+.portal-admin .primary:hover { background: #bfdbfe; }
+.portal-admin .data-table th { color: #a9bad0; background: #18263b; }
+.portal-admin .data-table td { color: #d3deec; border-color: #26364d; }
+.portal-admin .data-table tr:hover td { background: #142238; }
+.portal-admin .empty-cell { color: #9aabc2 !important; }
+.portal-admin .detail-list > div,
+.portal-admin .status-row { border-color: var(--portal-line); }
+.portal-admin .detail-list dt { color: var(--portal-muted); }
+.portal-admin .detail-list dd { color: var(--portal-text); }
+.portal-admin .notice-info { color: #bfdbfe; background: #142b46; border-color: #25496e; }
+.portal-admin .notice-error { color: #fecaca; background: #351d2a; border-color: #713247; }
+.portal-admin .tag-good { color: #a7f3d0; background: #123b34; }
+.portal-admin .tag-pending { color: #fde68a; background: #463619; }
+.portal-admin .tag-bad { color: #fecaca; background: #4a2029; }
+.portal-admin .admin-hero,
+.portal-admin .user-home-hero { border-color: var(--portal-line); background: radial-gradient(ellipse at 100% 0%, #1d3555 0, transparent 45%), linear-gradient(125deg, #111c2e, #13233a); }
+.portal-admin .wallet-banner { border-color: #285a7e; background: linear-gradient(135deg, #102b43, #164e63); color: #e6edf7; }
+.portal-admin .wallet-banner .eyebrow,
+.portal-admin .wallet-banner p { color: #b9d8ec; }
+.portal-admin .wallet-banner h2 { color: #fff; }
+.portal-admin .wallet-currency { color: #dbeafe; border-color: #ffffff38; background: #ffffff12; }
+.portal-admin .wallet-action-icon { color: #bfdbfe; background: #1b3655; }
+.portal-admin .wallet-action-card p,
+.portal-admin .wallet-methods-grid p { color: var(--portal-muted); }
+.portal-admin .stack-form label { color: #dbe7f7; }
+.portal-admin .stack-form input,
+.portal-admin .stack-form textarea,
+.portal-admin .stack-form select { border-color: #344861; background: #0c1727; color: #e6edf7; }
+.portal-admin .stack-form input:focus,
+.portal-admin .stack-form textarea:focus,
+.portal-admin .stack-form select:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px #60a5fa26; }
+.portal-admin .profile-tool-links a { color: #bfdbfe; border-color: var(--portal-line); }
+.portal-admin .inline-action { text-decoration: none; }
+.portal-admin .primary:focus-visible,
+.portal-admin .ghost:focus-visible,
+.portal-admin .menu-link:focus-visible,
+.portal-admin a:focus-visible { outline-color: #93c5fd; }
+@media (max-width: 760px) {
+  .portal-customer .user-home-hero { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .portal-customer .wallet-banner { padding: 18px; }
+  .portal-admin .sidebar { background: #0e1828; }
+  .portal-admin .sidebar-nav { scrollbar-color: #405570 #0e1828; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-customer .metric-card { transition: none; }
+}
+
+/* Invest Broker brand mark shared by customer and admin portals. */
+.brand-mark { overflow: hidden; padding: 4px; }
+.brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.portal-admin .brand-mark { background: linear-gradient(140deg, #172b49, #0f766e); border: 1px solid #31506d; }
