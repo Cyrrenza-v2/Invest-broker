@@ -19,15 +19,15 @@ jobs:
       - name: Require the configured Supabase URL secret
         shell: bash
         env:
-          SUPABASE_DB_URL: ${{ secrets.Invest_broker_api_url }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
           if [[ -z "${SUPABASE_DB_URL}" ]]; then
-            echo "::error::Add the repository Actions secret Invest_broker_api_url, then rerun this workflow."
+            echo "::error::Add the repository Actions secret SUPABASE_DB_URL, then rerun this workflow."
             exit 1
           fi
           if [[ "${SUPABASE_DB_URL}" != postgres://* && "${SUPABASE_DB_URL}" != postgresql://* ]]; then
-            echo "::error::Invest_broker_api_url must contain a PostgreSQL connection URI (postgres:// or postgresql://) for schema export. A Supabase HTTPS API/project URL cannot be used by supabase db dump."
+            echo "::error::SUPABASE_DB_URL must contain a PostgreSQL connection URI (postgres:// or postgresql://) for schema export. A Supabase HTTPS API/project URL cannot be used by supabase db dump."
             exit 1
           fi
 
@@ -38,7 +38,7 @@ jobs:
       - name: Export schema only
         shell: bash
         env:
-          SUPABASE_DB_URL: ${{ secrets.Invest_broker_api_url }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
           output="$RUNNER_TEMP/invest-broker-public-schema.sql"
