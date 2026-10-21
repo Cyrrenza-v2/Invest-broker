@@ -82,6 +82,7 @@ jobs:
           if [[ ! -f supabase/config.toml ]]; then
             npx --yes supabase@latest init
           fi
+          npx --yes supabase@latest --version
       - name: Isolate the three exact-version recovered migrations
         shell: bash
         run: |
@@ -92,16 +93,57 @@ jobs:
           cp supabase/migrations/20261010060317_invest_broker_ledger_posting_guard.sql "$tmp/"
           find supabase/migrations -maxdepth 1 -type f -name '*.sql' -delete
           cp "$tmp"/*.sql supabase/migrations/
+          echo "Subset migration files:"
+          find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort
           test "$(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | wc -l | tr -d ' ')" = "3"
       - name: Start isolated local Supabase
-        run: npx --yes supabase@latest start
+        shell: bash
+        run: |
+          set -uo pipefail
+          set -x
+          npx --yes supabase@latest start 2>&1 | tee /tmp/supabase-start.log
       - name: Replay recovered subset from an empty database
-        run: npx --yes supabase@latest db reset --local
+        shell: bash
+        run: |
+          set -uo pipefail
+          set -x
+          npx --yes supabase@latest db reset --local 2>&1 | tee /tmp/supabase-reset.log
       - name: Lint recovered subset schema
-        run: npx --yes supabase@latest db lint --local
-      - name: Stop isolated Supabase
+        shell: bash
+        run: |
+          set -uo pipefail
+          set -x
+          npx --yes supabase@latest db lint --local 2>&1 | tee /tmp/supabase-lint.log
+      - name: Upload isolated replay diagnostics
         if: always()
-        run: npx --yes supabase@latest stop --no-backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-subset-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            /tmp/supabase-start.log
+            /tmp/supabase-reset.log
+            /tmp/supabase-lint.log
+      - name: Summarize environment and stop isolated Supabase
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Isolated Supabase replay diagnostics"
+            echo "- Runner: `$RUNNER_OS`"
+            echo "- Node: $(node --version 2>&1 || true)"
+            echo "- npm: $(npm --version 2>&1 || true)"
+            echo "- Docker: $(docker --version 2>&1 || true)"
+            echo "- Supabase CLI: $(npx --yes supabase@latest --version 2>&1 || true)"
+            echo "- Migration files in isolated workspace:"
+            find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '  - %f\n' 2>&1 || true
+            echo "- Docker containers:"
+            docker ps -a --no-trunc 2>&1 || true
+            echo "- Supabase status:"
+            npx --yes supabase@latest status 2>&1 || true
+          } >> "$GITHUB_STEP_SUMMARY"
+          npx --yes supabase@latest stop --no-backup 2>&1 || true
 
   full-local-replay:
     name: Replay and lint complete migration history
