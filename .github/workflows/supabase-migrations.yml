@@ -99,7 +99,7 @@ jobs:
       - name: Start isolated local Supabase
         shell: bash
         run: |
-          set -uo pipefail
+          set -euo pipefail
           set -x
           npx --yes supabase@latest start 2>&1 | tee /tmp/supabase-start.log
       - name: Replay recovered subset from an empty database
