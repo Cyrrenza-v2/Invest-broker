@@ -12,8 +12,12 @@ function allowedOrigin(origin: string) {
     const u = new URL(origin);
     if (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname) && u.port === "5173") return true;
     return u.protocol === "https:" && (
-      u.hostname === "invest-broker.vercel.app" ||
-      (u.hostname.startsWith("invest-broker-") && u.hostname.endsWith(".vercel.app"))
+      u.hostname === "invest-broker.com" ||
+      u.hostname === "admin.invest-broker.com" ||
+      u.hostname === "invest-broker-user.pages.dev" ||
+      u.hostname.endsWith(".invest-broker-user.pages.dev") ||
+      u.hostname === "invest-broker-admin.pages.dev" ||
+      u.hostname.endsWith(".invest-broker-admin.pages.dev")
     );
   } catch { return false; }
 }
