@@ -40,7 +40,7 @@ function title(p: string) {
 }
 function shell(body: string, active: string) {
   const links = ROLE === 'user' ? userLinks : adminLinks;
-  return '<div class="app-layout"><aside class="sidebar"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer workspace' : 'Admin CEO workspace') + '</small></span></a><nav class="sidebar-nav">' +
+  return '<div class="app-layout ' + (ROLE === 'admin' ? 'portal-admin' : 'portal-customer') + '><aside class="sidebar"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer workspace' : 'Admin CEO workspace') + '</small></span></a><nav class="sidebar-nav">' +
     links.map(l => '<a class="menu-link ' + (active === l[0] ? 'is-active' : '') + '" href="#' + l[0] + '">' + l[1] + '</a>').join('') +
     '</nav><div class="sidebar-foot"><span class="live-dot"></span> Authenticated workspace</div></aside><main class="main-panel"><header class="topbar"><div><p class="eyebrow">' + (ROLE === 'user' ? 'Customer portal' : 'Restricted operations') + '</p><h1>' + e(title(active)) + '</h1></div><div class="top-actions"><span class="account-pill">' + e(d.profile?.full_name || d.user?.email || 'Account') + '</span><button class="ghost" data-action="refresh">Refresh</button><button class="ghost" data-action="logout">Sign out</button></div></header>' +
     (d.error ? '<div class="notice notice-error">' + e(d.error) + '</div>' : '') + (d.notice ? '<div class="notice notice-info">' + e(d.notice) + '</div>' : '') + body +
