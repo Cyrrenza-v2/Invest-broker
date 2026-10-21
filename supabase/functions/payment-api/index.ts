@@ -11,10 +11,12 @@ function allowedOrigin(origin: string) {
   try {
     const u = new URL(origin);
     if (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname) && u.port === "5173") return true;
-    return u.protocol === "https:" && (
-      u.hostname === "invest-broker.vercel.app" ||
-      (u.hostname.startsWith("invest-broker-") && u.hostname.endsWith(".vercel.app"))
-    );
+    return u.protocol === "https:" && [
+      "invest-broker.com",
+      "admin.invest-broker.com",
+      "invest-broker-user.pages.dev",
+      "invest-broker-admin.pages.dev"
+    ].includes(u.hostname);
   } catch { return false; }
 }
 function json(req: Request, body: unknown, status = 200) {
