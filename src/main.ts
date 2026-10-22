@@ -1,4 +1,5 @@
 import { isAdmin, supabase, type Profile, type Row, type SupabaseUser } from './supabase';
+import { clearInvestBrokerWebMCP, syncInvestBrokerWebMCP } from './webmcp';
 
 type Role = 'user' | 'admin';
 type RecordRow = Row & { id?: string; user_id?: string; currency?: string; status?: string; created_at?: string; amount?: number; debit_amount?: number; credit_amount?: number; description?: string; entry_type?: string; principal?: number; investment_code?: string; deposit_code?: string; withdrawal_code?: string; name?: string; full_name?: string; user_code?: string; approval_status?: string; account_status?: string; kyc_status?: string };
@@ -6,7 +7,7 @@ type AppData = { user: SupabaseUser | null; profile: Profile | null; users: Prof
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root not found');
 const host = location.hostname.toLowerCase();
-const isAdminHost = host === 'admin-invest-broker.vercel.app' || host === 'admin-invest-broker.pages.dev' || host.startsWith('admin-invest-broker-') || host === 'invest-broker-admin.pages.dev';
+const isAdminHost = host === 'admin.invest-broker.com' || host === 'admin.investbroker.com' || host === 'admin-invest-broker.pages.dev' || host === 'invest-broker-admin.pages.dev' || host.startsWith('admin-invest-broker-') || host.endsWith('.admin-invest-broker.pages.dev');
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let pendingMfa: { factorId: string; challengeId: string } | null = null;
@@ -18,8 +19,8 @@ const status = (v: unknown) => { const s = String(v || 'unknown'); const t = ['a
 const path = () => location.hash.replace(/^#/, '') || '/welcome';
 const go = (p: string) => { location.hash = p; };
 const err = (x: unknown) => x instanceof Error ? x.message : 'Unexpected error';
-async function edge<T>(fn: string, endpoint: string, method: 'GET'|'POST' = 'GET', body?: Row, query?: string): Promise<T> {
-  const r = await supabase.edge<{data:T}|T>(fn, endpoint, { method, body, query });
+async function edge<T>(fn: string, endpoint: string, method: 'GET'|'POST' = 'GET', body?: Row, query?: string, signal?: AbortSignal): Promise<T> {
+  const r = await supabase.edge<{data:T}|T>(fn, endpoint, { method, body, query, signal });
   return r && typeof r === 'object' && 'data' in r ? (r as {data:T}).data : r as T;
 }
 function table(head: string[], rows: string[][], empty = 'No records found.') {
@@ -194,8 +195,9 @@ function adminContent(p: string): string {
 }
 async function render() {
   const id = ++sequence; const p = path(); d.error = ''; d.notice = '';
-  if (p === '/welcome') { app!.innerHTML = welcome(); return; }
+  if (p === '/welcome') { clearInvestBrokerWebMCP(); app!.innerHTML = welcome(); return; }
   if (['/login/user','/login/admin','/register/user','/register/admin'].includes(p)) {
+    clearInvestBrokerWebMCP();
     if ((p.includes('/admin') ? 'admin' : 'user') !== ROLE) { go('/welcome'); return; }
     app!.innerHTML = authPage(p.startsWith('/register') ? 'register' : 'login'); return;
   }
@@ -209,6 +211,7 @@ async function render() {
     catch (x) { d.error = err(x); app!.innerHTML = authPage('login'); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.auth-card')?.prepend(box); }
     return;
   }
+  void syncInvestBrokerWebMCP(() => ({ role: ROLE, userId: d.user?.id ?? null, authenticated: !!d.user, trustedAdmin: !!d.user && isAdmin(d.user), aal2: currentAssuranceLevel() === 'aal2' }), edge);
   app!.innerHTML = shell('<section class="state-card"><div class="spinner"></div><h2>Loading account data</h2><p>Fetching authorized records from Supabase…</p></section>',p);
   try {
     if (ROLE === 'user') await loadUser(); else await loadAdmin();
@@ -321,7 +324,7 @@ app.addEventListener('click', event => {
   if (action === 'cancel-mfa') { pendingMfa = null; void supabase.signOut().finally(() => go('/login/admin')); return; }
   if (action === 'route' && target.dataset.route) { go(target.dataset.route); return; }
   if (action === 'refresh') { void render(); return; }
-  if (action === 'logout') { void supabase.signOut().finally(() => { d.user = null; d.profile = null; go('/welcome'); }); return; }
+  if (action === 'logout') { clearInvestBrokerWebMCP(); void supabase.signOut().finally(() => { d.user = null; d.profile = null; go('/welcome'); }); return; }
   if (action === 'review-user' && ROLE === 'admin' && target.dataset.userId && target.dataset.review) {
     const review = target.dataset.review; const reason = review === 'reject' ? prompt('Optional reason for rejection:') : '';
     if (review === 'reject' && reason === null) return;
