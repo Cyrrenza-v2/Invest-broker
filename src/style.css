@@ -431,3 +431,79 @@ input, select, textarea { max-width: 100%; }
 .brand-mark { overflow: hidden; padding: 4px; }
 .brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .portal-admin .brand-mark { background: linear-gradient(140deg, #172b49, #0f766e); border: 1px solid #31506d; }
+
+/* Isolated browser-only crypto wallet sandbox. */
+.sandbox-layout { min-height: 100vh; display: grid; grid-template-columns: 240px minmax(0, 1fr); background: #f5f7fb; color: #172033; }
+.sandbox-sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 24px 16px; color: #dce7f7; background: #101b2d; }
+.sandbox-brand { display: flex; align-items: center; gap: 12px; padding: 4px 8px 28px; color: inherit; text-decoration: none; }
+.sandbox-brand > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; color: #fff; font-weight: 900; background: linear-gradient(140deg,#2563eb,#0f766e); }
+.sandbox-brand strong, .sandbox-brand small { display: block; }
+.sandbox-brand small { margin-top: 4px; color: #91a5c0; font-size: .75rem; }
+.sandbox-sidebar nav { display: grid; gap: 6px; }
+.sandbox-sidebar nav a { padding: 12px 14px; border-radius: 11px; color: #b8c8dc; text-decoration: none; font-weight: 650; }
+.sandbox-sidebar nav a:hover, .sandbox-sidebar nav a.active { color: #fff; background: #243650; }
+.sandbox-sidebar-note { margin-top: auto; padding: 14px; border: 1px solid #2d4059; border-radius: 12px; color: #a9bdd6; font-size: .78rem; line-height: 1.6; }
+.sandbox-main { min-width: 0; max-width: 1500px; width: 100%; margin: 0 auto; padding: 28px clamp(18px,3vw,42px) 48px; }
+.sandbox-topbar, .sandbox-heading, .sandbox-total, .sandbox-coin-head, .sandbox-coin-cell, .sandbox-quick-actions, .sandbox-kpis { display: flex; align-items: center; }
+.sandbox-topbar { justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.sandbox-topbar h1 { font-size: 1.35rem; }
+.sandbox-warning { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 24px; padding: 14px 16px; border: 1px solid #f2d39a; border-radius: 13px; background: #fff8e8; color: #7b4b0b; font-size: .88rem; }
+.sandbox-warning strong { font-size: .73rem; letter-spacing: .08em; }
+.sandbox-heading { display: block; margin: 8px 0 20px; }
+.sandbox-heading h2 { margin-bottom: 8px; }
+.sandbox-heading p:last-child { color: #64748b; }
+.sandbox-total { justify-content: space-between; gap: 18px; margin-bottom: 18px; padding: 26px; border-radius: 20px; color: #fff; background: linear-gradient(120deg,#102a4b,#1d4f79 62%,#0f766e); }
+.sandbox-total span, .sandbox-total small { display: block; color: #c6d9ef; }
+.sandbox-total strong { display: block; margin: 8px 0; font-size: clamp(2rem,4vw,2.8rem); letter-spacing: -.04em; }
+.sandbox-total-icon { display: grid !important; place-items: center; width: 58px; height: 58px; border: 1px solid #ffffff50; border-radius: 18px; color: white !important; font-size: 2rem; }
+.sandbox-quick-actions { flex-wrap: wrap; gap: 10px; margin: 18px 0 24px; }
+.sandbox-quick-actions a { padding: 10px 14px; border: 1px solid #d8e1ed; border-radius: 11px; background: #fff; color: #1e40af; text-decoration: none; font-weight: 700; }
+.sandbox-main .page-section-card { margin-bottom: 18px; padding: 22px; border: 1px solid #dce5f0; border-radius: 18px; background: white; box-shadow: 0 10px 28px #132b4b08; }
+.sandbox-market-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.sandbox-coin { min-width: 0; padding: 18px; border: 1px solid #dce5f0; border-radius: 16px; background: #fff; }
+.sandbox-coin-head { gap: 10px; }
+.sandbox-coin-head > div { min-width: 0; flex: 1; }
+.sandbox-coin-head strong, .sandbox-coin-head small, .sandbox-coin-cell strong, .sandbox-coin-cell small { display: block; }
+.sandbox-coin-head small, .sandbox-coin-cell small { margin-top: 3px; color: #718096; font-size: .77rem; }
+.sandbox-coin-icon { display: grid; flex: 0 0 auto; place-items: center; width: 40px; height: 40px; border-radius: 13px; color: #1d4ed8; background: #eaf1ff; font-size: 1.2rem; font-weight: 800; }
+.sandbox-coin h3 { margin: 18px 0 5px; font-size: 1.45rem; }
+.sandbox-coin p { min-height: 36px; margin-bottom: 14px; color: #718096; font-size: .78rem; line-height: 1.5; }
+.sandbox-change { font-weight: 750; white-space: nowrap; }
+.sandbox-change.up { color: #087f5b; }
+.sandbox-change.down { color: #c2413b; }
+.sandbox-columns { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
+.sandbox-balance-list { display: grid; gap: 0; }
+.sandbox-balance-list > div { display: grid; grid-template-columns: 55px minmax(0,1fr) minmax(0,1fr); align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid #edf1f6; }
+.sandbox-balance-list > div:last-child { border-bottom: 0; }
+.sandbox-balance-list span { color: #64748b; font-weight: 800; }
+.sandbox-balance-list strong { overflow-wrap: anywhere; }
+.sandbox-balance-list small { color: #64748b; text-align: right; }
+.sandbox-message { min-height: 20px; color: #b42318; font-size: .88rem; }
+.sandbox-status { display: inline-block; padding: 5px 8px; border-radius: 7px; color: #075985; background: #e0f2fe; font-size: .68rem; font-weight: 850; letter-spacing: .05em; }
+.sandbox-detail { display: block; max-width: 300px; margin-top: 4px; color: #64748b; font-size: .75rem; line-height: 1.4; }
+.sandbox-coin-cell { gap: 10px; }
+.sandbox-empty { padding: 28px 16px; text-align: center; color: #64748b; }
+.sandbox-empty strong { display: block; margin-bottom: 6px; color: #1e293b; }
+.sandbox-kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-bottom: 20px; }
+.sandbox-kpis article { padding: 18px; border: 1px solid #dce5f0; border-radius: 15px; background: #fff; }
+.sandbox-kpis span, .sandbox-kpis strong { display: block; }
+.sandbox-kpis span { color: #64748b; font-size: .8rem; }
+.sandbox-kpis strong { margin-top: 9px; font-size: 1.7rem; }
+.sandbox-footer { padding: 18px 0; color: #718096; font-size: .78rem; }
+.sandbox-main .stack-form label { display: grid; gap: 8px; margin-bottom: 16px; color: #334155; font-size: .88rem; font-weight: 700; }
+.sandbox-main .stack-form input, .sandbox-main .stack-form select { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; background: white; color: #172033; }
+.sandbox-main .small { padding: 8px 11px; font-size: .8rem; }
+@media (max-width: 980px) { .sandbox-market-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .sandbox-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 680px) {
+  .sandbox-layout { grid-template-columns: minmax(0,1fr); }
+  .sandbox-sidebar { position: static; height: auto; padding: 12px; }
+  .sandbox-brand { padding-bottom: 12px; }
+  .sandbox-sidebar nav { display: flex; overflow-x: auto; padding-bottom: 4px; }
+  .sandbox-sidebar nav a { flex: 0 0 auto; padding: 10px 12px; }
+  .sandbox-sidebar-note { display: none; }
+  .sandbox-main { padding: 18px 12px 32px; }
+  .sandbox-columns, .sandbox-market-grid { grid-template-columns: minmax(0,1fr); }
+  .sandbox-total { padding: 20px; }
+  .sandbox-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .sandbox-main .page-section-card { padding: 15px; }
+}
