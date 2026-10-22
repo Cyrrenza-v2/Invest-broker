@@ -63,7 +63,7 @@ function marketTable() {
   return '<div class="sandbox-market-grid">' + SANDBOX_ASSETS.map(a => '<article class="sandbox-coin"><div class="sandbox-coin-head"><span class="sandbox-coin-icon">' + escapeHtml(a.icon) + '</span><div><strong>' + escapeHtml(a.name) + '</strong><small>' + escapeHtml(a.symbol) + ' / USD</small></div><span class="sandbox-change ' + (a.change < 0 ? 'down' : 'up') + '">' + (a.change > 0 ? '+' : '') + a.change.toFixed(2) + '%</span></div><h3>' + usd(a.price) + '</h3><p>Static demonstration quote · not a live exchange price</p><button class="primary small" data-sandbox-action="trade" data-symbol="' + a.symbol + '">Test trade</button></article>').join('') + '</div>';
 }
 function nav(active: string) {
-  const links = [['/sandbox/wallet','Wallet'],['/sandbox/market','Markets'],['/sandbox/trade','Buy / Sell'],['/sandbox/transfer','Transfer'],['/sandbox/activity','Activity'],['/sandbox/admin','Admin demo']];
+  const links = [['/sandbox/wallet','Wallet'],['/sandbox/market','Markets'],['/sandbox/trade','Buy / Sell'],['/sandbox/transfer','Transfer'],['/sandbox/activity','Activity']];
   return '<aside class="sandbox-sidebar"><a class="sandbox-brand" href="#/sandbox/wallet"><span>IB</span><div><strong>Invest Broker</strong><small>Wallet sandbox</small></div></a><nav>' + links.map(([path,label]) => '<a class="' + (active === path ? 'active' : '') + '" href="#' + path + '">' + label + '</a>').join('') + '</nav><p class="sandbox-sidebar-note">Local-only demo<br>No real assets or payments</p></aside>';
 }
 export function sandboxContent(path: string): string {
