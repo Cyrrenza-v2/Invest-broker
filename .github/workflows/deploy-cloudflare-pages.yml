@@ -48,10 +48,16 @@ jobs:
           npm run build
           mv dist dist-admin
 
-      # Cloudflare Pages' connected Git deployment publishes main automatically.
-      # This workflow verifies the same source without requiring duplicate API secrets.
-      - name: Verify customer portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-user.pages.dev/ -o /dev/null
+      # Test built artifacts locally. Live URL checks belong to a separate
+      # deployment smoke test because Pages custom domains may not be configured yet.
+      - name: Smoke-test customer portal build artifact
+        run: |
+          test -s dist-user/index.html
+          grep -R -q "Wallet and trading flow" dist-user/assets
+          grep -R -q "SIMULATED" dist-user/assets
 
-      - name: Verify admin portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-admin.pages.dev/ -o /dev/null
+      - name: Smoke-test admin portal build artifact
+        run: |
+          test -s dist-admin/index.html
+          grep -R -q "Sandbox market" dist-admin/assets
+          grep -R -q "SIMULATED" dist-admin/assets
