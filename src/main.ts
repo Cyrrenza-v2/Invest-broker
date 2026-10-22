@@ -1,10 +1,12 @@
 import { isAdmin, supabase, type Profile, type Row, type SupabaseUser } from './supabase';
+import { initSandbox, sandboxContent, sandboxPage } from './sandbox-wallet';
 
 type Role = 'user' | 'admin';
 type RecordRow = Row & { id?: string; user_id?: string; currency?: string; status?: string; created_at?: string; amount?: number; debit_amount?: number; credit_amount?: number; description?: string; entry_type?: string; principal?: number; investment_code?: string; deposit_code?: string; withdrawal_code?: string; name?: string; full_name?: string; user_code?: string; approval_status?: string; account_status?: string; kyc_status?: string };
 type AppData = { user: SupabaseUser | null; profile: Profile | null; users: Profile[]; plans: RecordRow[]; wallets: RecordRow[]; adminWallets: RecordRow[]; adminPlans: RecordRow[]; returns: RecordRow[]; investments: RecordRow[]; transactions: RecordRow[]; deposits: RecordRow[]; withdrawals: RecordRow[]; treasury: RecordRow[]; compliance: RecordRow[]; audits: RecordRow[]; summary: Row; aiAnswer: string; aiModel: string; error: string; notice: string };
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root not found');
+initSandbox(app);
 const host = location.hostname.toLowerCase();
 const isAdminHost = host === 'admin-invest-broker.vercel.app' || host === 'admin-invest-broker.pages.dev' || host.startsWith('admin-invest-broker-') || host === 'invest-broker-admin.pages.dev';
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
@@ -32,7 +34,7 @@ function panel(title: string, body: string, sub = 'Invest Broker') {
 function metrics(rows: Array<[string,string,string]>) {
   return '<section class="metrics-grid">' + rows.map(r => '<article class="metric-card"><p>' + e(r[0]) + '</p><h3>' + e(r[1]) + '</h3><span>' + e(r[2]) + '</span></article>').join('') + '</section>';
 }
-const userLinks = [['/user/dashboard','Home'],['/user/investments','Investments'],['/user/wallet','Wallet'],['/user/deposit','Deposits'],['/user/withdraw','Withdrawals'],['/user/transactions','Transactions'],['/user/notifications','Notifications'],['/user/kyc','KYC'],['/user/profile','Profile'],['/user/security','Security'],['/user/support','Support']];
+const userLinks = [['/user/dashboard','Home'],['/user/investments','Investments'],['/user/wallet','Wallet'],['/sandbox/wallet','Wallet sandbox'],['/user/deposit','Deposits'],['/user/withdraw','Withdrawals'],['/user/transactions','Transactions'],['/user/notifications','Notifications'],['/user/kyc','KYC'],['/user/profile','Profile'],['/user/security','Security'],['/user/support','Support']];
 const adminLinks = [['/admin/dashboard','Dashboard'],['/admin/users','Customers'],['/admin/approvals','Approvals'],['/admin/wallets','Wallets'],['/admin/investments','Investments'],['/admin/investment-plans','Investment plans'],['/admin/profit-management','Profit management'],['/admin/deposits','Deposits'],['/admin/withdrawals','Withdrawals'],['/admin/treasury','Treasury'],['/admin/compliance','Compliance'],['/admin/ai-assistant','AI assistant'],['/admin/reports','Reports'],['/admin/audit-logs','Audit logs'],['/admin/settings','Settings']];
 function title(p: string) {
   const names: Record<string,string> = {'/user/dashboard':'Home · account overview','/user/investments':'Your investment status','/user/wallet':'Wallet · transactions and payment methods','/user/deposit':'Deposit history','/user/withdraw':'Withdrawal history','/user/transactions':'Transaction history','/user/notifications':'Notifications','/user/kyc':'Identity and KYC','/user/profile':'Your profile and verification','/user/security':'Security and sessions','/user/support':'Customer support','/admin/dashboard':'Operations dashboard','/admin/users':'Customer management','/admin/approvals':'Account approval queue','/admin/wallets':'Wallet register','/admin/investments':'Investment oversight','/admin/investment-plans':'Investment plan management','/admin/profit-management':'Profit and returns ledger','/admin/deposits':'Deposit records','/admin/withdrawals':'Withdrawal records','/admin/treasury':'Treasury accounts','/admin/compliance':'Compliance cases','/admin/ai-assistant':'Admin AI assistant','/admin/reports':'Operations reports','/admin/settings':'Platform settings','/admin/audit-logs':'Audit trail'};
@@ -119,6 +121,7 @@ function userContent(p: string): string {
   const invStatus = (x: RecordRow) => String(x.status || 'pending').toLowerCase();
   const amountFor = (x: RecordRow) => money(x.amount ?? x.credit_amount ?? x.debit_amount ?? 0, String(x.currency || 'USD'));
 
+  if (p.startsWith('/sandbox/')) return sandboxContent(p);
   if (p === '/user/dashboard') {
     const invested = d.investments.reduce((sum,x) => sum + (Number(x.principal) || 0), 0);
     const earned = posted.filter(x => /profit|return|credit/i.test(String(x.entry_type || '') + ' ' + String(x.description || '')))
@@ -194,6 +197,7 @@ function adminContent(p: string): string {
 }
 async function render() {
   const id = ++sequence; const p = path(); d.error = ''; d.notice = '';
+  if (p.startsWith('/sandbox/')) { app!.innerHTML = sandboxPage(p); return; }
   if (p === '/welcome') { app!.innerHTML = welcome(); return; }
   if (['/login/user','/login/admin','/register/user','/register/admin'].includes(p)) {
     if ((p.includes('/admin') ? 'admin' : 'user') !== ROLE) { go('/welcome'); return; }
