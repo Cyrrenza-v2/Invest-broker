@@ -51,7 +51,7 @@ export function simulateTransfer(state: SandboxState, symbol: string, amount: nu
   if (!coin) return { state, error: 'Choose a supported demo asset.' };
   if (!recipient.trim() || recipient.trim().length > 120) return { state, error: 'Enter a demo recipient label or email.' };
   if (!Number.isFinite(amount) || amount <= 0 || amount > (state.coins[symbol] || 0)) return { state, error: 'Transfer amount must be positive and no greater than your simulated balance.' };
-  state.coins[symbol] = Math.max(0, state.coins[symbol] - amount);
+  state.coins[symbol] = Math.max(0, (state.coins[symbol] || 0) - amount);
   addActivity(state, { type: 'Simulated transfer', asset: symbol, amount, quoteAmount: amount * coin.price, status: 'simulated', detail: 'Demo-only transfer recipient: ' + recipient.trim() });
   return { state };
 }
