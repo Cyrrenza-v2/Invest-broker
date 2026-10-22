@@ -8,7 +8,7 @@ const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('App root not found');
 initSandbox(app);
 const host = location.hostname.toLowerCase();
-const isAdminHost = host === 'admin-invest-broker.vercel.app' || host === 'admin-invest-broker.pages.dev' || host.startsWith('admin-invest-broker-') || host === 'invest-broker-admin.pages.dev';
+const isAdminHost = host === 'admin-invest-broker.pages.dev' || host === 'invest-broker-admin.pages.dev' || host.endsWith('.invest-broker-admin.pages.dev');
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let pendingMfa: { factorId: string; challengeId: string } | null = null;
