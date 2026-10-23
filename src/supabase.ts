@@ -63,8 +63,9 @@ type MfaChallenge = { id?: string; challenge_id?: string; expires_at?: string };
 export const supabase = {
   configured: Boolean(SUPABASE_URL && SUPABASE_ANON_KEY),
   session: getSession,
-  async signIn(email: string, password: string): Promise<AuthSession> {
-    const session = await request<AuthSession>('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify({ email, password }) }, false);
+  async signIn(email: string, password: string, captchaToken: string): Promise<AuthSession> {
+    if (!captchaToken.trim()) throw new SupabaseError('Complete the CAPTCHA verification before signing in.');
+    const session = await request<AuthSession>('/auth/v1/token?grant_type=password', { method: 'POST', body: JSON.stringify({ email, password, gotrue_meta_security: { captcha_token: captchaToken } }) }, false);
     saveSession(session);
     return session;
   },
@@ -83,8 +84,9 @@ export const supabase = {
     saveSession(session);
     return session;
   },
-  async signUp(email: string, password: string, fullName: string): Promise<{ user: SupabaseUser | null; session: AuthSession | null }> {
-    const result = await request<{ user: SupabaseUser | null; session?: AuthSession | null }>('/auth/v1/signup', { method: 'POST', body: JSON.stringify({ email, password, data: { full_name: fullName } }) }, false);
+  async signUp(email: string, password: string, fullName: string, captchaToken: string): Promise<{ user: SupabaseUser | null; session: AuthSession | null }> {
+    if (!captchaToken.trim()) throw new SupabaseError('Complete the CAPTCHA verification before creating an account.');
+    const result = await request<{ user: SupabaseUser | null; session?: AuthSession | null }>('/auth/v1/signup', { method: 'POST', body: JSON.stringify({ email, password, data: { full_name: fullName }, gotrue_meta_security: { captcha_token: captchaToken } }) }, false);
     if (result.session) saveSession(result.session);
     return { user: result.user ?? null, session: result.session ?? null };
   },
