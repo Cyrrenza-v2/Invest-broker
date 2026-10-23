@@ -431,3 +431,22 @@ input, select, textarea { max-width: 100%; }
 .brand-mark { overflow: hidden; padding: 4px; }
 .brand-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .portal-admin .brand-mark { background: linear-gradient(140deg, #172b49, #0f766e); border: 1px solid #31506d; }
+
+
+/* Accessible collapsible navigation for narrow screens and tablets. */
+.nav-toggle { display: none; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; }
+@media (max-width: 900px) {
+  .app-layout { grid-template-columns: minmax(0, 1fr); }
+  .app-layout .sidebar { position: relative; z-index: 5; height: auto; min-height: 0; padding: 14px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .app-layout .sidebar > .brand { min-height: 46px; }
+  .nav-toggle { display: flex; margin-top: 12px; }
+  .app-layout .sidebar-nav { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
+  .app-layout .sidebar.nav-open .sidebar-nav { display: grid; }
+  .app-layout .sidebar-foot { padding-top: 12px; }
+}
+@media (max-width: 420px) {
+  .app-layout .sidebar-nav { grid-template-columns: minmax(0, 1fr); }
+  .top-actions { justify-content: flex-start; }
+  .account-pill { max-width: calc(100vw - 44px); }
+  .page-section-card { padding: 15px; }
+}
