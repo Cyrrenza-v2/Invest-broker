@@ -13,11 +13,13 @@ function allowedOrigin(origin: string) {
   try {
     const u = new URL(origin);
     if (u.protocol === "http:" && ["localhost", "127.0.0.1"].includes(u.hostname) && u.port === "5173") return true;
-    return u.protocol === "https:" &&
-      (u.hostname === "invest-broker.vercel.app" ||
-       u.hostname === "admin-invest-broker.vercel.app" ||
-       (u.hostname.startsWith("invest-broker-") && u.hostname.endsWith(".vercel.app")) ||
-       (u.hostname.startsWith("admin-invest-broker-") && u.hostname.endsWith(".vercel.app")));
+    return u.protocol === "https:" && (
+      u.hostname === "admin.invest-broker.com" ||
+      u.hostname === "admin-invest-broker.pages.dev" ||
+      u.hostname === "invest-broker-admin.pages.dev" ||
+      u.hostname.endsWith(".admin-invest-broker.pages.dev") ||
+      u.hostname.endsWith(".invest-broker-admin.pages.dev")
+    );
   } catch { return false; }
 }
 function respond(req: Request, body: unknown, status = 200) {
