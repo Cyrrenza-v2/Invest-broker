@@ -27,31 +27,49 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund --legacy-peer-deps
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund --legacy-peer-deps
 
       - name: Build customer portal
         env:
           VITE_APP_ROLE: user
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://rjgzvpkyccfpnpzlbcuc.supabase.co' }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'sb_publishable_WRqEfkebSkqEBYhiCSAXRA_Z_jovR3l' }}
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-build-placeholder
+          VITE_CAPTCHA_PROVIDER: turnstile
+          VITE_CAPTCHA_SITE_KEY: ci-build-placeholder
         run: |
+          set -eu
           npm run build
+          test -s dist/index.html
+          test -d dist/assets
+          find dist/assets -maxdepth 1 -type f \( -name '*.js' -o -name '*.css' \) | grep -q .
           mv dist dist-user
 
       - name: Build admin portal
         env:
           VITE_APP_ROLE: admin
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://rjgzvpkyccfpnpzlbcuc.supabase.co' }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'sb_publishable_WRqEfkebSkqEBYhiCSAXRA_Z_jovR3l' }}
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-build-placeholder
+          VITE_CAPTCHA_PROVIDER: turnstile
+          VITE_CAPTCHA_SITE_KEY: ci-build-placeholder
         run: |
+          set -eu
           npm run build
+          test -s dist/index.html
+          test -d dist/assets
+          find dist/assets -maxdepth 1 -type f \( -name '*.js' -o -name '*.css' \) | grep -q .
           mv dist dist-admin
 
-      # Cloudflare Pages' connected Git deployment publishes main automatically.
-      # This workflow verifies the same source without requiring duplicate API secrets.
-      - name: Verify customer portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-user.pages.dev/ -o /dev/null
+      # These are deterministic artifact smoke tests. Production DNS/reachability
+      # is checked separately because it must not make pull-request CI flaky.
+      - name: Smoke-test customer portal artifact
+        run: |
+          set -eu
+          grep -q '<div id="app"></div>' dist-user/index.html
+          test "$(find dist-user/assets -maxdepth 1 -type f -name '*.js' | wc -l)" -gt 0
 
-      - name: Verify admin portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-admin.pages.dev/ -o /dev/null
+      - name: Smoke-test admin portal artifact
+        run: |
+          set -eu
+          grep -q '<div id="app"></div>' dist-admin/index.html
+          test "$(find dist-admin/assets -maxdepth 1 -type f -name '*.js' | wc -l)" -gt 0
