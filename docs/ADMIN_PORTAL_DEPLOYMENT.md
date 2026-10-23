@@ -1,38 +1,37 @@
 # Admin Portal Deployment Checklist
 
-## Purpose
-Deploy the admin portal as a separate Vercel project without changing the existing customer deployment.
+## Deployment platform
+Deploy the admin portal to Cloudflare Pages from the `Cyrrenza-v2/Invest-broker` GitHub repository. Keep the customer portal in its separate Cloudflare Pages project.
 
-## Vercel project settings
+## Admin Pages project settings
 - Repository: `Cyrrenza-v2/Invest-broker`
-- Project name: `invest-broker-admin`
 - Framework preset: Vite
 - Build command: `npm run build`
 - Output directory: `dist`
-- Environment variable: `VITE_APP_ROLE=admin`
-- Production branch: `main` (or the approved release branch)
+- Build environment variable: `VITE_APP_ROLE=admin`
+- Production branch: `main` (or an approved release branch)
+- Custom domain: `admin.invest-broker.com`
 
-The existing frontend selects the admin presentation at build time through `VITE_APP_ROLE`. The customer project must retain its own user-role build configuration.
+The customer Pages project must use `VITE_APP_ROLE=user` and the customer domain `invest-broker.com`. Keep the customer and admin projects separate and do not use Vercel build hooks or deployments.
 
-## Important release gate
-The current `src/main.ts` implementation uses browser `localStorage` and seeded demo accounts. The admin welcome screen states that the preview is not connected to production authentication or real money. Therefore, a successful Vite build is **not** proof that the admin app is production-ready.
-
-Do not use demo credentials for real operations, and do not enable deposits, withdrawals, treasury changes, or ledger mutations until:
-1. Admin identity and role are verified server-side on every privileged API request.
-2. Admin endpoints use the production Supabase project and enforce authorization/RLS.
-3. User and admin sessions cannot cross portal boundaries.
-4. Ledger mutations are server-authorized, idempotent, and audited.
-5. End-to-end tests verify admin access denial for ordinary users and customer access denial for admin-only actions.
-
-## Current deployment blocker
-Project creation through the connected Vercel integration returned HTTP 403 (insufficient permission). This is an account/team permission blocker, not a build error. Once project creation is permitted, use the settings above and verify the deployment's READY state and commit SHA before publishing its URL.
+## Security and release gate
+A successful Vite build is not proof that the portal is production-ready. Before production certification:
+1. Verify administrator identity and role server-side on every privileged API request.
+2. Verify admin endpoints use the production Supabase project and enforce authorization/RLS.
+3. Verify customer and admin sessions cannot cross portal boundaries.
+4. Keep ledger mutations server-authorized, idempotent, and audited.
+5. Verify ordinary customers are denied admin access and admin-only actions.
+6. Confirm admin MFA/AAL2 and the primary-admin restriction.
+7. Confirm payment providers remain test-only and financial operations remain disabled until separately authorized.
+8. Reconcile the documented Supabase migration-history mismatch before any production schema change.
 
 ## Release verification
-- [ ] Separate Vercel project created and linked to this repository
-- [ ] Admin environment variable configured only on the admin project
-- [ ] Production deployment is READY and points to the approved commit
+- [ ] Cloudflare Pages project connected to the intended GitHub repository and production branch
+- [ ] Admin build uses `VITE_APP_ROLE=admin`
+- [ ] Customer build uses `VITE_APP_ROLE=user`
+- [ ] Custom domains are verified and active in Cloudflare
 - [ ] Admin login and server-side role checks pass
-- [ ] Admin data loads from Supabase rather than browser seed data
-- [ ] Privileged operations are blocked until backend and ledger tests pass
-- [ ] Installable PWA manifest/service worker and app name verified for admin
-- [ ] Customer production URL remains unchanged
+- [ ] Admin data loads from the intended Supabase project
+- [ ] Customer access to admin-only routes and data is blocked
+- [ ] Worker health and invalid-session rejection probes pass
+- [ ] No Vercel deployment workflow, hook, or production trigger remains
