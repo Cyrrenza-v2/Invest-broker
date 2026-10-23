@@ -1,4 +1,4 @@
-name: Verify Invest Broker portals for Cloudflare Pages
+name: Verify Invest Broker portals (Cloudflare Pages)
 
 on:
   push:
@@ -48,10 +48,14 @@ jobs:
           npm run build
           mv dist dist-admin
 
-      # Cloudflare Pages' connected Git deployment publishes main automatically.
-      # This workflow verifies the same source without requiring duplicate API secrets.
-      - name: Verify customer portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-user.pages.dev/ -o /dev/null
+      - name: Smoke-test customer build output
+        run: |
+          test -s dist-user/index.html
+          grep -q 'Invest Broker' dist-user/index.html
+          find dist-user/assets -maxdepth 1 -type f -name '*.js' -print -quit | grep -q .
 
-      - name: Verify admin portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-admin.pages.dev/ -o /dev/null
+      - name: Smoke-test admin build output
+        run: |
+          test -s dist-admin/index.html
+          grep -q 'Invest Broker' dist-admin/index.html
+          find dist-admin/assets -maxdepth 1 -type f -name '*.js' -print -quit | grep -q .
