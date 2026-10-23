@@ -10,6 +10,17 @@ const isAdminHost = host === 'admin-invest-broker.vercel.app' || host === 'admin
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let pendingMfa: { factorId: string; challengeId: string } | null = null;
+let captchaToken: string | null = null;
+const CAPTCHA_PROVIDER = String(import.meta.env.VITE_CAPTCHA_PROVIDER || 'turnstile').toLowerCase();
+const CAPTCHA_SITE_KEY = String(import.meta.env.VITE_CAPTCHA_SITE_KEY || '');
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: string | HTMLElement, options: { sitekey: string; callback: (token: string) => void; 'expired-callback'?: () => void; 'error-callback'?: () => void }) => string;
+      reset: (widgetId?: string) => void;
+    };
+  }
+}
 let sequence = 0;
 const e = (v: unknown): string => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c));
 const date = (v: unknown) => v ? new Date(String(v)).toLocaleString() : '—';
@@ -49,10 +60,52 @@ function shell(body: string, active: string) {
 function welcome() {
   return '<main class="welcome-page"><header class="welcome-head"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>Secure investment workspace</small></span></a><span class="secure-label">Supabase-backed access</span></header><section class="welcome-hero"><div class="hero-copy"><p class="eyebrow">' + (ROLE === 'user' ? 'Your account, clearly presented' : 'Private operations console') + '</p><h1>' + (ROLE === 'user' ? 'A clearer view of your investment journey.' : 'Run operations with clear controls.') + '</h1><p>' + (ROLE === 'user' ? 'Sign in to see your account profile, USD wallet availability, investments, and ledger activity.' : 'Review customer applications, investments, deposits, withdrawals, treasury, compliance, and audit information.') + '</p><div class="hero-actions"><button class="primary" data-action="route" data-route="' + (ROLE === 'user' ? '/login/user' : '/login/admin') + '">Sign in</button>' + (ROLE === 'user' ? '<button class="ghost" data-action="route" data-route="/register/user">Create customer account</button>' : '') + '</div><p class="small-text muted">No simulated balances, payments, or approvals.</p></div><div class="hero-art"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-card"><span class="art-icon">IB</span><small>ACCOUNT SECURITY</small><strong>Authenticated access</strong><span class="art-line"></span><span class="art-line short"></span><div class="art-footer"><span>Supabase Auth</span><span class="live-dot"></span></div></div></div></section><section class="welcome-features"><article><span>01</span><h3>' + (ROLE === 'user' ? 'Your account data' : 'Customer oversight') + '</h3><p>Data is fetched after authentication and filtered by backend permissions.</p></article><article><span>02</span><h3>' + (ROLE === 'user' ? 'USD-only display' : 'Ledger-aware controls') + '</h3><p>' + (ROLE === 'user' ? 'NGN wallet records are never converted or presented as USD.' : 'Money movement remains server-authorized; this interface does not post ledger entries.') + '</p></article><article><span>03</span><h3>Clear status</h3><p>Pending access or backend errors are shown without inventing a success.</p></article></section></main>';
 }
+async function mountCaptcha(): Promise<void> {
+  captchaToken = null;
+  const container = document.getElementById('captcha-widget');
+  if (!container) return;
+  if (CAPTCHA_PROVIDER !== 'turnstile' || !CAPTCHA_SITE_KEY) {
+    container.innerHTML = '<p class="small-text muted">Security verification is not configured. Contact the platform owner.</p>';
+    return;
+  }
+  try {
+    if (!window.turnstile) {
+      let script = document.querySelector<HTMLScriptElement>('script[data-invest-broker-turnstile]');
+      if (!script) {
+        script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.dataset.investBrokerTurnstile = 'true';
+        document.head.appendChild(script);
+      }
+      await new Promise<void>((resolve, reject) => {
+        if (window.turnstile) { resolve(); return; }
+        script!.addEventListener('load', () => resolve(), { once: true });
+        script!.addEventListener('error', () => reject(new Error('Could not load CAPTCHA verification. Check network restrictions and try again.')), { once: true });
+      });
+    }
+    if (!window.turnstile) throw new Error('CAPTCHA provider did not initialize.');
+    if (!document.getElementById('captcha-widget')) return;
+    window.turnstile.render(container, {
+      sitekey: CAPTCHA_SITE_KEY,
+      callback: token => { captchaToken = token; },
+      'expired-callback': () => { captchaToken = null; },
+      'error-callback': () => { captchaToken = null; }
+    });
+  } catch (x) {
+    container.innerHTML = '<p class="small-text muted">Security verification could not load. Refresh the page or try another network.</p>';
+    console.error('CAPTCHA initialization failed', x);
+  }
+}
+function showAuth(mode: 'login'|'register') {
+  app!.innerHTML = authPage(mode);
+  void mountCaptcha();
+}
 function authPage(mode: 'login'|'register') {
   return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer portal' : 'Admin CEO portal') + '</small></span></a><section class="auth-card"><p class="eyebrow">' + (ROLE === 'user' ? 'Customer access' : 'Restricted administrator access') + '</p><h1>' + (mode === 'login' ? 'Welcome back' : 'Create your account') + '</h1><p class="muted">' + (mode === 'login' ? 'Sign in using your Supabase account.' : 'New accounts remain pending administrator approval.') + '</p><form data-form="auth" data-mode="' + mode + '">' +
     (mode === 'register' ? '<label>Full name<input name="full_name" autocomplete="name" required maxlength="120" placeholder="Your full name"></label>' : '') +
-    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
+    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><div class="captcha-container"><div id="captcha-widget" aria-label="Security verification"></div></div><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
     (mode === 'login' && ROLE === 'user' ? 'New here? <a href="#/register/user">Create an account</a>' : mode === 'register' ? '<a href="#/login/user">Already registered? Sign in</a>' : '<a href="#/welcome">Back to welcome</a>') +
     '</p><p class="small-text muted">Admin access comes from trusted server-side role metadata, never from a form selection.</p></section></main>';
 }
@@ -197,16 +250,16 @@ async function render() {
   if (p === '/welcome') { app!.innerHTML = welcome(); return; }
   if (['/login/user','/login/admin','/register/user','/register/admin'].includes(p)) {
     if ((p.includes('/admin') ? 'admin' : 'user') !== ROLE) { go('/welcome'); return; }
-    app!.innerHTML = authPage(p.startsWith('/register') ? 'register' : 'login'); return;
+    showAuth(p.startsWith('/register') ? 'register' : 'login'); return;
   }
   if ((ROLE === 'user' && p.startsWith('/admin')) || (ROLE === 'admin' && p.startsWith('/user'))) { app!.innerHTML = shell('<section class="state-card"><h2>Separate workspace</h2><p>This URL belongs to the other workspace. Your current screen was not redirected. Open the correct user or admin app URL to continue.</p></section>', p); return; }
   d.user = await supabase.currentUser();
-  if (!d.user) { app!.innerHTML = authPage('login'); return; }
+  if (!d.user) { showAuth('login'); return; }
   if (ROLE === 'user' && isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator account detected</h2><p>This account is restricted from the customer API. Open the Admin CEO app URL to continue.</p><button class="ghost" data-action="logout">Sign out</button></section>',p); return; }
   if (ROLE === 'admin' && !isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator access required</h2><p>This account has no trusted admin role. Sign in with the authorized Admin CEO account.</p></section>',p); return; }
   if (ROLE === 'admin' && currentAssuranceLevel() !== 'aal2') {
     try { await showAdminMfaChallenge(); }
-    catch (x) { d.error = err(x); app!.innerHTML = authPage('login'); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.auth-card')?.prepend(box); }
+    catch (x) { d.error = err(x); showAuth('login'); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.auth-card')?.prepend(box); }
     return;
   }
   app!.innerHTML = shell('<section class="state-card"><div class="spinner"></div><h2>Loading account data</h2><p>Fetching authorized records from Supabase…</p></section>',p);
@@ -226,13 +279,16 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
   const btn = form.querySelector<HTMLButtonElement>('button[type="submit"]'); if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
   try {
     if (!supabase.configured) throw new Error('Missing Supabase configuration. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the deployment environment.');
+    if (!captchaToken) throw new Error('Complete the security verification before continuing. If the CAPTCHA widget is missing, check VITE_CAPTCHA_PROVIDER=turnstile, VITE_CAPTCHA_SITE_KEY, the provider hostname allowlist, and Supabase Auth CAPTCHA configuration.');
+    const verifiedCaptchaToken = captchaToken;
+    captchaToken = null;
     if (form.dataset.mode === 'register') {
       if (ROLE !== 'user') throw new Error('Admin registration is disabled.');
-      await supabase.signUp(email,password,String(values.get('full_name') || '').trim());
-      if (!supabase.session()) { app!.innerHTML = authPage('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
+      await supabase.signUp(email,password,String(values.get('full_name') || '').trim(),verifiedCaptchaToken);
+      if (!supabase.session()) { showAuth('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
       d.user = await supabase.currentUser(); go('/user/dashboard'); return;
     }
-    let session = await supabase.signIn(email,password); let user = session.user;
+    let session = await supabase.signIn(email,password,verifiedCaptchaToken); let user = session.user;
     if (ROLE === 'admin' && !isAdmin(user) && email === 'udofiaasianubong583@gmail.com') {
       await supabase.invoke('admin-bootstrap',{}); session = await supabase.refreshSession() || session; user = await supabase.currentUser() || user;
     }
@@ -248,13 +304,13 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
   } catch (x) {
     const rawMessage = err(x);
     const invalidCredentials = /invalid login credentials/i.test(rawMessage);
-    const captchaConfigurationMissing = /security verification is not configured|captcha.*not configured|captcha_required/i.test(rawMessage);
+    const captchaConfigurationMissing = /security verification is not configured|captcha.*not configured|captcha_required|captcha_token|captcha verification/i.test(rawMessage);
     d.error = captchaConfigurationMissing
       ? 'Sign-in is blocked because Supabase Auth CAPTCHA verification is enabled but this portal did not receive a valid CAPTCHA token. Fix this in Supabase Dashboard → Authentication → Bot and Abuse Protection: configure the CAPTCHA provider and matching site/secret keys, then add the deployed Pages hostname to the provider allowlist. If CAPTCHA is not intended, the project owner must review and change that Auth setting deliberately. This app will not bypass the check. After saving, reload and retry.'
       : invalidCredentials && ROLE === 'user'
         ? 'We could not sign you in. Check that this email is registered in this Invest Broker project and that the password is correct. If you just registered, confirm your email first. If you still cannot sign in, use Forgot password or contact support.'
         : rawMessage.replace(/^\/auth\/v1\/[^:]+:\s*/i, '');
-    app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login');
+    showAuth(form.dataset.mode === 'register' ? 'register' : 'login');
     const box = document.createElement('div'); box.className = 'notice notice-error'; box.setAttribute('role', 'alert'); box.textContent = d.error; app!.querySelector('.auth-card')?.prepend(box);
   } finally { if (btn) { btn.disabled = false; btn.textContent = form.dataset.mode === 'register' ? 'Create customer account' : 'Sign in securely'; } }
 }
