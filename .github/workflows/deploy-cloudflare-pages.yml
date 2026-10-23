@@ -48,10 +48,20 @@ jobs:
           npm run build
           mv dist dist-admin
 
-      # Cloudflare Pages' connected Git deployment publishes main automatically.
-      # This workflow verifies the same source without requiring duplicate API secrets.
-      - name: Verify customer portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-user.pages.dev/ -o /dev/null
+      # Verify the generated static frontends locally. Public URL probes are
+      # intentionally excluded: Pages projects/domains are not yet confirmed.
+      - name: Smoke-test customer portal build output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist-user/index.html
+          test -s dist-user/assets/$(find dist-user/assets -maxdepth 1 -type f -name '*.js' -printf '%f\n' | head -n 1)
+          grep -q 'Invest Broker' dist-user/index.html
 
-      - name: Verify admin portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-admin.pages.dev/ -o /dev/null
+      - name: Smoke-test admin portal build output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist-admin/index.html
+          test -s dist-admin/assets/$(find dist-admin/assets -maxdepth 1 -type f -name '*.js' -printf '%f\n' | head -n 1)
+          grep -q 'Invest Broker' dist-admin/index.html
