@@ -40,7 +40,7 @@ function title(p: string) {
 }
 function shell(body: string, active: string) {
   const links = ROLE === 'user' ? userLinks : adminLinks;
-  return '<div class="app-layout ' + (ROLE === 'admin' ? 'portal-admin' : 'portal-customer') + '"><aside class="sidebar"><a class="brand" href="#/welcome"><span class="brand-mark"><img src="/icons/invest-broker-mark.svg" alt="" width="36" height="36" /></span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer workspace' : 'Admin CEO workspace') + '</small></span></a><nav class="sidebar-nav">' +
+  return '<div class="app-layout ' + (ROLE === 'admin' ? 'portal-admin' : 'portal-customer') + '"><aside class="sidebar"><a class="brand" href="#/welcome"><span class="brand-mark"><img src="/icons/invest-broker-mark.svg" alt="" width="36" height="36" /></span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer workspace' : 'Admin CEO workspace') + '</small></span></a><button class="ghost nav-toggle" type="button" data-action="toggle-nav" aria-expanded="false" aria-controls="portal-navigation">Menu <span aria-hidden="true">☰</span></button><nav id="portal-navigation" class="sidebar-nav">' +
     links.map(l => '<a class="menu-link ' + (active === l[0] ? 'is-active' : '') + '" href="#' + l[0] + '">' + l[1] + '</a>').join('') +
     '</nav><div class="sidebar-foot"><span class="live-dot"></span> Authenticated workspace</div></aside><main class="main-panel"><header class="topbar"><div><p class="eyebrow">' + (ROLE === 'user' ? 'Customer portal' : 'Restricted operations') + '</p><h1>' + e(title(active)) + '</h1></div><div class="top-actions"><span class="account-pill">' + e(d.profile?.full_name || d.user?.email || 'Account') + '</span><button class="ghost" data-action="refresh">Refresh</button><button class="ghost" data-action="logout">Sign out</button></div></header>' +
     (d.error ? '<div class="notice notice-error">' + e(d.error) + '</div>' : '') + (d.notice ? '<div class="notice notice-info">' + e(d.notice) + '</div>' : '') + body +
@@ -248,9 +248,12 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
   } catch (x) {
     const rawMessage = err(x);
     const invalidCredentials = /invalid login credentials/i.test(rawMessage);
-    d.error = invalidCredentials && ROLE === 'user'
-      ? 'We could not sign you in. Check that this email is registered in this Invest Broker project and that the password is correct. If you just registered, confirm your email first. If you still cannot sign in, use Forgot password or contact support.'
-      : rawMessage.replace(/^\/auth\/v1\/[^:]+:\s*/i, '');
+    const captchaConfigurationMissing = /security verification is not configured|captcha.*not configured|captcha_required/i.test(rawMessage);
+    d.error = captchaConfigurationMissing
+      ? 'Sign-in is blocked because Supabase Auth CAPTCHA verification is enabled but this portal did not receive a valid CAPTCHA token. Fix this in Supabase Dashboard → Authentication → Bot and Abuse Protection: configure the CAPTCHA provider and matching site/secret keys, then add the deployed Pages hostname to the provider allowlist. If CAPTCHA is not intended, the project owner must review and change that Auth setting deliberately. This app will not bypass the check. After saving, reload and retry.'
+      : invalidCredentials && ROLE === 'user'
+        ? 'We could not sign you in. Check that this email is registered in this Invest Broker project and that the password is correct. If you just registered, confirm your email first. If you still cannot sign in, use Forgot password or contact support.'
+        : rawMessage.replace(/^\/auth\/v1\/[^:]+:\s*/i, '');
     app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login');
     const box = document.createElement('div'); box.className = 'notice notice-error'; box.setAttribute('role', 'alert'); box.textContent = d.error; app!.querySelector('.auth-card')?.prepend(box);
   } finally { if (btn) { btn.disabled = false; btn.textContent = form.dataset.mode === 'register' ? 'Create customer account' : 'Sign in securely'; } }
@@ -318,6 +321,7 @@ app.addEventListener('submit', event => {
 app.addEventListener('click', event => {
   const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]'); if (!target) return;
   const action = target.dataset.action;
+  if (action === 'toggle-nav') { const sidebar = target.closest('.sidebar'); const nav = sidebar?.querySelector<HTMLElement>('#portal-navigation'); const expanded = target.getAttribute('aria-expanded') === 'true'; target.setAttribute('aria-expanded', String(!expanded)); sidebar?.classList.toggle('nav-open', !expanded); if (nav) nav.setAttribute('aria-hidden', String(expanded)); return; }
   if (action === 'cancel-mfa') { pendingMfa = null; void supabase.signOut().finally(() => go('/login/admin')); return; }
   if (action === 'route' && target.dataset.route) { go(target.dataset.route); return; }
   if (action === 'refresh') { void render(); return; }
