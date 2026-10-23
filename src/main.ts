@@ -8,6 +8,37 @@ if (!app) throw new Error('App root not found');
 const host = location.hostname.toLowerCase();
 const isAdminHost = host === 'admin-invest-broker.vercel.app' || host === 'admin-invest-broker.pages.dev' || host.startsWith('admin-invest-broker-') || host === 'invest-broker-admin.pages.dev';
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
+const TURNSTILE_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
+type TurnstileApi = { render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; 'expired-callback'?: () => void; 'error-callback'?: () => void; theme?: 'auto'|'light'|'dark' }) => string; reset: (widgetId?: string) => void };
+declare global { interface Window { turnstile?: TurnstileApi } }
+let turnstileWidgetId: string | null = null;
+let turnstileToken = '';
+let turnstileLoadPromise: Promise<void> | null = null;
+function setupTurnstile() {
+  turnstileToken = '';
+  turnstileWidgetId = null;
+  const container = document.querySelector<HTMLElement>('#turnstile-widget');
+  const form = document.querySelector<HTMLFormElement>('[data-form="auth"]');
+  const submit = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+  if (!container || !form || !submit) return;
+  if (!TURNSTILE_SITE_KEY) {
+    container.textContent = 'Security verification is not configured. Please try again later.';
+    submit.disabled = true;
+    return;
+  }
+  const renderWidget = () => {
+    if (!window.turnstile || !container.isConnected) return;
+    turnstileWidgetId = window.turnstile.render(container, { sitekey: TURNSTILE_SITE_KEY, theme: 'auto', callback: token => { turnstileToken = token; submit.disabled = false; }, 'expired-callback': () => { turnstileToken = ''; submit.disabled = true; }, 'error-callback': () => { turnstileToken = ''; submit.disabled = true; container.textContent = 'Security verification failed. Reload the page and try again.'; } });
+    submit.disabled = true;
+  };
+  if (window.turnstile) { renderWidget(); return; }
+  if (!turnstileLoadPromise) turnstileLoadPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[data-turnstile-script]');
+    if (existing) { existing.addEventListener('load', () => resolve(), { once: true }); existing.addEventListener('error', () => reject(new Error('Could not load Turnstile.')), { once: true }); return; }
+    const script = document.createElement('script'); script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'; script.async = true; script.defer = true; script.dataset.turnstileScript = 'true'; script.onload = () => resolve(); script.onerror = () => reject(new Error('Could not load Turnstile.')); document.head.appendChild(script);
+  });
+  void turnstileLoadPromise.then(renderWidget).catch(() => { container.textContent = 'Security verification could not load. Check your connection and reload.'; submit.disabled = true; });
+}
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let pendingMfa: { factorId: string; challengeId: string } | null = null;
 let sequence = 0;
@@ -52,7 +83,7 @@ function welcome() {
 function authPage(mode: 'login'|'register') {
   return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer portal' : 'Admin CEO portal') + '</small></span></a><section class="auth-card"><p class="eyebrow">' + (ROLE === 'user' ? 'Customer access' : 'Restricted administrator access') + '</p><h1>' + (mode === 'login' ? 'Welcome back' : 'Create your account') + '</h1><p class="muted">' + (mode === 'login' ? 'Sign in using your Supabase account.' : 'New accounts remain pending administrator approval.') + '</p><form data-form="auth" data-mode="' + mode + '">' +
     (mode === 'register' ? '<label>Full name<input name="full_name" autocomplete="name" required maxlength="120" placeholder="Your full name"></label>' : '') +
-    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
+    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><div id="turnstile-widget" class="turnstile-widget" aria-label="Security verification"></div><button class="primary full-width" type="submit" disabled>' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
     (mode === 'login' && ROLE === 'user' ? 'New here? <a href="#/register/user">Create an account</a>' : mode === 'register' ? '<a href="#/login/user">Already registered? Sign in</a>' : '<a href="#/welcome">Back to welcome</a>') +
     '</p><p class="small-text muted">Admin access comes from trusted server-side role metadata, never from a form selection.</p></section></main>';
 }
@@ -197,16 +228,16 @@ async function render() {
   if (p === '/welcome') { app!.innerHTML = welcome(); return; }
   if (['/login/user','/login/admin','/register/user','/register/admin'].includes(p)) {
     if ((p.includes('/admin') ? 'admin' : 'user') !== ROLE) { go('/welcome'); return; }
-    app!.innerHTML = authPage(p.startsWith('/register') ? 'register' : 'login'); return;
+    app!.innerHTML = authPage(p.startsWith('/register') ? 'register' : 'login'); setupTurnstile(); return;
   }
   if ((ROLE === 'user' && p.startsWith('/admin')) || (ROLE === 'admin' && p.startsWith('/user'))) { app!.innerHTML = shell('<section class="state-card"><h2>Separate workspace</h2><p>This URL belongs to the other workspace. Your current screen was not redirected. Open the correct user or admin app URL to continue.</p></section>', p); return; }
   d.user = await supabase.currentUser();
-  if (!d.user) { app!.innerHTML = authPage('login'); return; }
+  if (!d.user) { app!.innerHTML = authPage('login'); setupTurnstile(); return; }
   if (ROLE === 'user' && isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator account detected</h2><p>This account is restricted from the customer API. Open the Admin CEO app URL to continue.</p><button class="ghost" data-action="logout">Sign out</button></section>',p); return; }
   if (ROLE === 'admin' && !isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator access required</h2><p>This account has no trusted admin role. Sign in with the authorized Admin CEO account.</p></section>',p); return; }
   if (ROLE === 'admin' && currentAssuranceLevel() !== 'aal2') {
     try { await showAdminMfaChallenge(); }
-    catch (x) { d.error = err(x); app!.innerHTML = authPage('login'); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.auth-card')?.prepend(box); }
+    catch (x) { d.error = err(x); app!.innerHTML = authPage('login'); setupTurnstile(); const box=document.createElement('div'); box.className='notice notice-error'; box.textContent=d.error; app!.querySelector('.auth-card')?.prepend(box); }
     return;
   }
   app!.innerHTML = shell('<section class="state-card"><div class="spinner"></div><h2>Loading account data</h2><p>Fetching authorized records from Supabase…</p></section>',p);
@@ -223,16 +254,18 @@ async function render() {
 }
 async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
   event.preventDefault(); const values = new FormData(form); const email = String(values.get('email') || '').trim().toLowerCase(); const password = String(values.get('password') || '');
+  const captchaToken = turnstileToken;
+  if (!TURNSTILE_SITE_KEY || !captchaToken) { const box=document.createElement('div'); box.className='notice notice-error'; box.setAttribute('role','alert'); box.textContent='Complete the security verification before continuing.'; form.prepend(box); return; }
   const btn = form.querySelector<HTMLButtonElement>('button[type="submit"]'); if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
   try {
     if (!supabase.configured) throw new Error('Missing Supabase configuration. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the deployment environment.');
     if (form.dataset.mode === 'register') {
       if (ROLE !== 'user') throw new Error('Admin registration is disabled.');
-      await supabase.signUp(email,password,String(values.get('full_name') || '').trim());
+      await supabase.signUp(email,password,String(values.get('full_name') || '').trim(),captchaToken);
       if (!supabase.session()) { app!.innerHTML = authPage('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
       d.user = await supabase.currentUser(); go('/user/dashboard'); return;
     }
-    let session = await supabase.signIn(email,password); let user = session.user;
+    let session = await supabase.signIn(email,password,captchaToken); let user = session.user;
     if (ROLE === 'admin' && !isAdmin(user) && email === 'udofiaasianubong583@gmail.com') {
       await supabase.invoke('admin-bootstrap',{}); session = await supabase.refreshSession() || session; user = await supabase.currentUser() || user;
     }
@@ -251,7 +284,7 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
     d.error = invalidCredentials && ROLE === 'user'
       ? 'We could not sign you in. Check that this email is registered in this Invest Broker project and that the password is correct. If you just registered, confirm your email first. If you still cannot sign in, use Forgot password or contact support.'
       : rawMessage.replace(/^\/auth\/v1\/[^:]+:\s*/i, '');
-    app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login');
+    app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login'); setupTurnstile();
     const box = document.createElement('div'); box.className = 'notice notice-error'; box.setAttribute('role', 'alert'); box.textContent = d.error; app!.querySelector('.auth-card')?.prepend(box);
   } finally { if (btn) { btn.disabled = false; btn.textContent = form.dataset.mode === 'register' ? 'Create customer account' : 'Sign in securely'; } }
 }
