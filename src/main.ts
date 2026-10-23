@@ -250,7 +250,7 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
     const invalidCredentials = /invalid login credentials/i.test(rawMessage);
     const captchaConfigurationMissing = /security verification is not configured|captcha.*not configured|captcha_required/i.test(rawMessage);
     d.error = captchaConfigurationMissing
-      ? 'Supabase security verification is not configured for this deployment. Sign-in is blocked until the site verification provider and its keys are configured in Supabase Auth and the portal deployment. No security check has been bypassed.'
+      ? 'Sign-in is blocked because Supabase Auth CAPTCHA verification is enabled but this portal did not receive a valid CAPTCHA token. Fix this in Supabase Dashboard → Authentication → Bot and Abuse Protection: configure the CAPTCHA provider and matching site/secret keys, then add the deployed Pages hostname to the provider allowlist. If CAPTCHA is not intended, the project owner must review and change that Auth setting deliberately. This app will not bypass the check. After saving, reload and retry.'
       : invalidCredentials && ROLE === 'user'
         ? 'We could not sign you in. Check that this email is registered in this Invest Broker project and that the password is correct. If you just registered, confirm your email first. If you still cannot sign in, use Forgot password or contact support.'
         : rawMessage.replace(/^\/auth\/v1\/[^:]+:\s*/i, '');
