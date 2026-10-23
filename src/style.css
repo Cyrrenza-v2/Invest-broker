@@ -450,3 +450,8 @@ input, select, textarea { max-width: 100%; }
   .account-pill { max-width: calc(100vw - 44px); }
   .page-section-card { padding: 15px; }
 }
+
+/* Supabase Auth CAPTCHA challenge */
+.captcha-container { display: flex; justify-content: flex-start; align-items: center; min-height: 68px; margin: 12px 0 16px; overflow-x: auto; }
+#captcha-widget { min-height: 60px; max-width: 100%; }
+.captcha-container .small-text { margin: 0; color: #9a3412; }
