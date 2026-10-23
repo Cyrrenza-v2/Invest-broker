@@ -1,37 +1,62 @@
 # Fresh-environment schema baseline (recovery plan)
 
-## Why this exists
+## Purpose and safety
 
-The live Invest Broker database records 15 applied migrations, but Git currently contains only a subset of the exact historical SQL files. The missing files must not be recreated from guesses or by renaming migrations from other branches. The live database must not be reset or replayed to repair this repository gap.
+The live Invest Broker project records 19 applied migrations. The repository does not currently contain verified original SQL for the full recorded history. This directory is reserved for a **fresh-environment-only** baseline; it must not be used to rewrite, fake, or reset production migration history.
 
-## Required baseline procedure
+No production SQL has been applied during this recovery work. Keep production migration/deploy jobs disabled and `financial_operations_enabled = false`.
 
-1. Preserve the recorded production migration history and keep production migration/deploy jobs disabled.
-2. Recover the exact original SQL from repository history/backups if possible. Exact originals remain preferred.
-3. If originals cannot be recovered, export a **schema-only** snapshot from the live project using the Supabase CLI/database tooling into a separately named fresh-environment baseline. Do not export customer rows, auth users, secrets, or payment data.
-4. Review the snapshot for tables, views, sequences, constraints, indexes, triggers, functions, grants, RLS enablement and policies, extensions, and realtime publication membership. Verify that it includes the protections added by the later recorded migrations.
-5. Replay the baseline from an empty isolated local database, run schema lint/security checks, and compare the resulting catalog against a read-only schema inventory of the live project.
-6. Keep the baseline separate from the historical migration directory and label it **fresh-environment-only**. Do not insert a fake historical migration version or mark the missing migrations as recovered.
-7. Only after review, change CI to use the baseline path for fresh environments. Keep any production database mutation/deployment disabled until separately reviewed and explicitly authorized.
+## Verified live migration ledger
+
+Read from the linked Supabase project during this recovery:
+
+1. `20261010055354` — `invest_broker_shared_platform_foundation`
+2. `20261010055614` — `invest_broker_user_portal_support_features`
+3. `20261010055730` — `invest_broker_notification_read_state`
+4. `20261010060308` — `invest_broker_double_entry_ledger`
+5. `20261010060317` — `invest_broker_ledger_posting_guard`
+6. `20261010133726` — `invest_broker_account_approval_gate`
+7. `20261010133851` — `invest_broker_single_admin_control`
+8. `20261010133958` — `invest_broker_atomic_account_review`
+9. `20261010201831` — `bootstrap_single_primary_admin`
+10. `20261011171226` — `phase_2_realtime_admin_customer_updates`
+11. `20261011221255` — `platform_control_deny_client_access`
+12. `20261011221826` — `ledger_posting_requires_all_pending_lines`
+13. `20261012104812` — `payment_provider_test_scaffold`
+14. `20261012155617` — `deny_browser_access_payment_provider_tables`
+15. `20261015002132` — `revoke_api_access_from_foreign_table`
+16. `20261016072153` — `index_foreign_keys_and_optimize_audit_policy`
+17. `20261019163350` — `backend_webhook_safety_foundation`
+18. `20261019172543` — `invest_broker_primary_admin_and_ledger_lockdown`
+19. `20261019175117` — `invest_broker_financial_safety_gate`
+
+The workflow's older integrity list includes only versions 1–15; that list is not the complete live ledger. A migration recorded as applied is not evidence that its original SQL file is available.
+
+## Original SQL recovery results
+
+Three originals have been recovered from `feature/platform-foundation` with exact version and filename and matching recorded blob hashes:
+
+- `20261010055354_invest_broker_shared_platform_foundation.sql`
+- `20261010060308_invest_broker_double_entry_ledger.sql`
+- `20261010060317_invest_broker_ledger_posting_guard.sql`
+
+The original `20261015002132_revoke_api_access_from_foreign_table.sql` is also present. Similar-named files with different version timestamps are not accepted as substitutes. Exact originals for the other ledger versions have not yet been verified from accessible GitHub history.
+
+## How to produce the baseline
+
+1. **Search trusted sources first.** Inspect all reachable branches, tags, releases, backups and CI artifacts for exact original SQL. Record the source commit and blob hash for each file. Never infer the historical version from a similar name.
+2. **Export schema only.** Use the manual workflow `.github/workflows/supabase-schema-snapshot.yml` to create a temporary review artifact. In repository Settings → Secrets and variables → Actions, set `SUPABASE_DB_URL` to the direct Postgres connection string yourself. Do not paste credentials into chat or commit them.
+3. Open Actions → **Export read-only Supabase schema snapshot** and run it. The workflow is manual-only, exports the public schema, and does not apply SQL. Download the short-lived artifact for review.
+4. Review coverage for tables, views, sequences, types, constraints, indexes, functions, triggers, grants, RLS enablement and policies, extensions, realtime publication membership, and dependencies across schemas. The public-schema export alone may not capture managed schemas, roles, extension setup, or external foreign-server credentials.
+5. Construct a clearly named baseline under this directory from the reviewed schema export. Include a provenance note, export timestamp, source project reference, and hash. Do not include application rows, auth users, secrets, payment data, or customer documents.
+6. Replay it in an isolated empty local database. Run schema lint and security checks, then compare catalog inventories against the live project. A passing replay is necessary but not sufficient; manually review security-definer functions, grants, RLS, audit/ledger immutability and the single-admin guard.
+7. Only after review, add a separate fresh-environment CI path. Keep it distinct from historical integrity validation. Do not insert a fake historical migration version or mark unrecovered migrations as restored.
 
 ## Current gate
 
-The workflow intentionally fails the historical-integrity check while original SQL is missing. The three exact-version recovered migrations pass isolated replay, but that is not evidence that the entire schema can be recreated. This gate must not be weakened to make CI green.
+**No complete baseline SQL has been created yet.** The actual schema-only artifact is needed to construct it faithfully; generating SQL from names or the partial catalog summary would be guesswork. The repository has the manual export workflow, but a user-configured `SUPABASE_DB_URL` secret is required before that workflow can produce an artifact.
 
-## Current verification
-
-The live migration ledger lists these 15 versions: 20261010055354, 20261010055614, 20261010055730, 20261010060308, 20261010060317, 20261010133726, 20261010133851, 20261010133958, 20261010201831, 20261011171226, 20261011221255, 20261011221826, 20261012104812, 20261012155617, 20261015002132.
-
-No production SQL was applied as part of this recovery work.
-
-
-## Read-only export helper
-
-The manual workflow `.github/workflows/supabase-schema-snapshot.yml` can create a short-lived schema-only review artifact without applying SQL:
-
-1. In GitHub repository Settings → Secrets and variables → Actions, add a repository secret named `SUPABASE_DB_URL` containing the project's direct Postgres connection URL. Never paste it into chat, commit it, or put it in workflow YAML.
-2. Open Actions → **Export read-only Supabase schema snapshot** → Run workflow on `chore/rebuild-ci-stack`.
-3. Download the `invest-broker-public-schema-review` artifact and review it for completeness and dependencies before constructing a fresh-environment baseline.
-4. The artifact expires after three days. It is not automatically committed or applied to any database.
-
-This helper exports only the `public` schema and requests no application rows. It is a review input, not proof of a complete Supabase environment: managed schemas, extensions, roles, and cross-schema dependencies still need validation. The workflow is manual-only and has no database mutation step.
+- Full historical replay remains blocked until exact originals are recovered or a separately reviewed baseline route is established.
+- The three-file isolated replay only tests that subset, not the complete schema.
+- Production migration/deployment must remain disabled until review and explicit authorization.
+- No production SQL or migration history was changed during this recovery.
