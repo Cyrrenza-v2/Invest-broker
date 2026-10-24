@@ -450,3 +450,100 @@ input, select, textarea { max-width: 100%; }
   .account-pill { max-width: calc(100vw - 44px); }
   .page-section-card { padding: 15px; }
 }
+
+
+/* Invest Broker UI consistency pass: align customer and CEO portals while
+   preserving their distinct visual identities and existing data workflows. */
+:root {
+  --ib-brand: #1673f9;
+  --ib-brand-strong: #0759d8;
+  --ib-navy: #0b1728;
+  --ib-line: #dce5f0;
+  --ib-muted: #64748b;
+  --ib-radius-card: 18px;
+}
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #60a5fa;
+  outline-offset: 3px;
+}
+button:disabled, [aria-disabled="true"] { cursor: not-allowed; opacity: .62; }
+.card, .auth-card, .page-section-card, .metric-card, .wallet-action-card {
+  border-radius: var(--ib-radius-card);
+}
+.primary { background: var(--ib-brand); }
+.primary:hover { background: var(--ib-brand-strong); }
+.brand { min-width: 0; text-decoration: none; }
+.brand strong { letter-spacing: -.025em; }
+.brand small { line-height: 1.4; }
+.topbar h1 { letter-spacing: -.035em; line-height: 1.15; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.data-table-wrap { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.data-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.data-table th, .data-table td { padding: 12px 14px; vertical-align: middle; }
+.data-table th { text-align: left; white-space: nowrap; }
+.notice { border-radius: 14px; }
+.auth-card label { display: grid; gap: 7px; }
+.auth-card input, .stack-form input, .stack-form select, .stack-form textarea {
+  width: 100%; min-width: 0; border-radius: 12px;
+}
+.auth-card .primary, .auth-card .secondary { min-height: 46px; }
+.portal-customer .sidebar { box-shadow: 6px 0 24px #132b4b05; }
+.portal-customer .brand-mark { border-radius: 12px; }
+.portal-admin .sidebar { box-shadow: 8px 0 28px #02081712; }
+.portal-admin .brand-mark { border-radius: 12px; }
+.portal-admin .primary { color: #fff; background: #1673f9; }
+.portal-admin .primary:hover { background: #0759d8; }
+.portal-admin .primary:focus-visible { outline-color: #93c5fd; }
+.metric-card, .page-section-card { min-width: 0; }
+.metric-card h3, .metric-card p, .page-section-card h3 { overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .app-layout { grid-template-columns: 210px minmax(0, 1fr); }
+  .main-panel { min-width: 0; padding: 22px; }
+  .topbar { align-items: flex-start; }
+  .top-actions { justify-content: flex-end; }
+  .dashboard-grid, .wallet-methods-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 680px) {
+  .app-layout { display: block; min-height: 100dvh; }
+  .sidebar {
+    position: relative; z-index: 10; gap: 12px; padding: 14px 16px;
+    border-right: 0; border-bottom: 1px solid var(--portal-line, var(--ib-line));
+  }
+  .brand { gap: 10px; }
+  .brand-mark { flex: 0 0 auto; }
+  .nav-toggle { display: flex; min-height: 44px; }
+  .sidebar-nav { display: none; margin-top: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .sidebar.nav-open .sidebar-nav { display: grid; }
+  .sidebar-nav .menu-link { min-width: 0; min-height: 44px; padding: 10px; overflow-wrap: anywhere; }
+  .sidebar-foot { display: none; }
+  .main-panel { padding: 18px 14px 28px; }
+  .topbar { flex-direction: column; align-items: stretch; gap: 12px; padding: 4px 0 18px; }
+  .topbar h1 { font-size: clamp(1.35rem, 6vw, 1.8rem); }
+  .top-actions { display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
+  .account-pill { max-width: 100%; overflow-wrap: anywhere; }
+  .dashboard-grid, .metrics-grid, .metric-grid, .welcome-features { grid-template-columns: minmax(0, 1fr); }
+  .page-section-card, .card, .auth-card { padding: 16px; }
+  .section-heading { align-items: flex-start; }
+  .data-table { min-width: 600px; }
+  .auth-page { padding: 22px 14px; }
+  .auth-card { width: 100%; max-width: 480px; }
+  .welcome-page { padding: 16px; }
+  .welcome-head { gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  .welcome-hero { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .welcome-hero h1 { font-size: clamp(2rem, 9vw, 3rem); }
+  .hero-art { min-height: 220px; }
+  .hero-actions { flex-wrap: wrap; }
+  .hero-actions > * { flex: 1 1 140px; }
+  .portal-admin .sidebar { background: #0e1828; }
+}
+@media (max-width: 380px) {
+  .main-panel { padding-inline: 10px; }
+  .sidebar { padding-inline: 12px; }
+  .sidebar-nav { grid-template-columns: minmax(0, 1fr); }
+  .top-actions > button { flex: 1 1 auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
