@@ -78,7 +78,7 @@ function title(p: string) {
 }
 function shell(body: string, active: string) {
   const links = ROLE === 'user' ? userLinks : adminLinks;
-  return '<div class="app-layout ' + (ROLE === 'admin' ? 'portal-admin' : 'portal-customer') + '"><aside class="sidebar"><a class="brand" href="#/welcome"><span class="brand-mark"><img src="/icons/invest-broker-mark.svg" alt="" width="36" height="36" /></span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer workspace' : 'Admin CEO workspace') + '</small></span></a><button class="ghost nav-toggle" type="button" data-action="toggle-nav" aria-expanded="false" aria-controls="portal-navigation">Menu <span aria-hidden="true">☰</span></button><nav id="portal-navigation" class="sidebar-nav">' +
+  return '<div class="app-layout ' + (ROLE === 'admin' ? 'portal-admin' : 'portal-customer') + '"><aside class="sidebar"><a class="brand" href="#/welcome"><span class="brand-mark"><img src="/icons/invest-broker-mark.svg" alt="" width="36" height="36" /></span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer workspace' : 'Admin CEO workspace') + '</small></span></a>' + ((active === '/user/dashboard' || active === '/admin/dashboard') ? '<button class="ghost nav-toggle" type="button" data-action="toggle-nav" aria-expanded="false" aria-controls="portal-navigation">Menu <span aria-hidden="true">☰</span></button>' : '') + '<nav id="portal-navigation" class="sidebar-nav">' +
     links.map(l => '<a class="menu-link ' + (active === l[0] ? 'is-active' : '') + '" href="#' + l[0] + '">' + l[1] + '</a>').join('') +
     '</nav><div class="sidebar-foot"><span class="live-dot"></span> Authenticated workspace</div></aside><main class="main-panel"><header class="topbar"><div><p class="eyebrow">' + (ROLE === 'user' ? 'Customer portal' : 'Restricted operations') + '</p><h1>' + e(title(active)) + '</h1></div><div class="top-actions"><span class="account-pill">' + e(d.profile?.full_name || d.user?.email || 'Account') + '</span><button class="ghost" data-action="refresh">Refresh</button><button class="ghost" data-action="logout">Sign out</button></div></header>' +
     (d.error ? '<div class="notice notice-error">' + e(d.error) + '</div>' : '') + (d.notice ? '<div class="notice notice-info">' + e(d.notice) + '</div>' : '') + body +
@@ -204,7 +204,7 @@ function userContent(p: string): string {
   if (p === '/user/kyc') return metrics([['KYC status',String(d.profile?.kyc_status || '—'),'Current profile record'],['Account approval',String(d.profile?.approval_status || '—'),'Admin-reviewed access gate']]) + panel('Identity verification','<p>Current KYC status: ' + status(d.profile?.kyc_status) + '</p><p class="muted">Secure document upload is not enabled until private storage and access policies are verified. Do not upload identity documents through an unsecured form.</p><a class="ghost inline-action" href="#/user/profile">Back to Profile</a>');
   if (p === '/user/notifications') return panel('Notifications','<p class="muted">Account, deposit, withdrawal, KYC, profit-credit and security notifications will appear here when the user notification API is enabled.</p><a class="ghost inline-action" href="#/user/profile">Back to Profile</a>');
   if (p === '/user/security') return panel('Security & sessions','<ul class="clean-list"><li>Use a unique password and keep it private.</li><li>Sign out on shared devices.</li><li>Admin privileges are server-controlled and require verified MFA.</li></ul><a class="ghost inline-action" href="#/user/profile">Back to Profile</a>');
-  if (p === '/user/transactions') return go('/user/wallet'), '';
+  if (p === '/user/transactions') return panel('Transaction history',table(['Type','Description','Amount','Currency','Status','Date'],d.transactions.filter(usd).map(x=>[e(x.entry_type || 'Ledger entry'),e(x.description || '—'),e(amountFor(x)),e(x.currency || 'USD'),status(x.status),e(date(x.created_at))]),'No USD transactions returned by the backend.')) + '<div class="notice notice-info">This screen shows only transaction records returned by the authenticated API. Empty results do not establish a reconciled balance.</div><a class="ghost inline-action" href="#/user/wallet">Back to Wallet</a>';
   if (p === '/user/support') return panel('Help & support','<form data-form="support" class="stack-form"><label>Subject<input name="subject" required maxlength="200" placeholder="How can we help?"></label><label>Message<textarea name="body" required maxlength="10000" rows="5" placeholder="Describe your question"></textarea></label><button class="primary" type="submit">Send support message</button></form>','Secure message') + '<a class="ghost inline-action" href="#/user/profile">Back to Profile</a>';
   return userContent('/user/dashboard');
 }
@@ -271,9 +271,6 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
       d.user = await supabase.currentUser(); go('/user/dashboard'); return;
     }
     let session = await supabase.signIn(email,password,requireCaptchaToken(form)); let user = session.user;
-    if (ROLE === 'admin' && !isAdmin(user) && email === 'udofiaasianubong583@gmail.com') {
-      await supabase.invoke('admin-bootstrap',{}); session = await supabase.refreshSession() || session; user = await supabase.currentUser() || user;
-    }
     if (ROLE === 'admin' && !isAdmin(user)) { await supabase.signOut(); throw new Error('This login does not have trusted administrator role metadata. Admin access cannot be granted by the frontend.'); }
     if (ROLE === 'user' && isAdmin(user)) { await supabase.signOut(); throw new Error('This is an administrator account. Use the Admin CEO app.'); }
     d.user = user;
@@ -359,7 +356,7 @@ app.addEventListener('submit', event => {
 app.addEventListener('click', event => {
   const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action]'); if (!target) return;
   const action = target.dataset.action;
-  if (action === 'toggle-nav') { const sidebar = target.closest('.sidebar'); const nav = sidebar?.querySelector<HTMLElement>('#portal-navigation'); const expanded = target.getAttribute('aria-expanded') === 'true'; target.setAttribute('aria-expanded', String(!expanded)); sidebar?.classList.toggle('nav-open', !expanded); if (nav) nav.setAttribute('aria-hidden', String(expanded)); return; }
+  if (action === 'toggle-nav') { const sidebar = target.closest('.sidebar'); const nav = sidebar?.querySelector<HTMLElement>('#portal-navigation'); const expanded = target.getAttribute('aria-expanded') === 'true'; target.setAttribute('aria-expanded', String(!expanded)); sidebar?.classList.toggle('nav-open', !expanded); if (nav) { nav.setAttribute('aria-hidden', String(expanded)); if (!expanded) nav.removeAttribute('inert'); else nav.setAttribute('inert',''); } return; }
   if (action === 'cancel-mfa') { pendingMfa = null; void supabase.signOut().finally(() => go('/login/admin')); return; }
   if (action === 'route' && target.dataset.route) { go(target.dataset.route); return; }
   if (action === 'refresh') { void render(); return; }

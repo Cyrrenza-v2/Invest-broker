@@ -450,3 +450,13 @@ input, select, textarea { max-width: 100%; }
   .account-pill { max-width: calc(100vw - 44px); }
   .page-section-card { padding: 15px; }
 }
+
+
+/* Portal navigation behavior: the menu toggle exists on dashboard screens only.
+   On compact layouts it controls visibility instead of leaving a dead-looking button. */
+@media (max-width: 720px) {
+  .sidebar .nav-toggle + .sidebar-nav { display: flex; }
+  .sidebar:not(.nav-open) .nav-toggle + .sidebar-nav { display: none; }
+  .sidebar.nav-open .nav-toggle + .sidebar-nav { display: flex; }
+  .sidebar .nav-toggle { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; align-self: flex-start; }
+}
