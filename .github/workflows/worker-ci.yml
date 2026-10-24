@@ -15,7 +15,8 @@ permissions:
 jobs:
   verify:
     name: Build frontend and test Worker
-    runs-on: ubuntu-latest
+    # Pin to the current Ubuntu LTS to avoid unplanned ubuntu-latest image migrations.
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
