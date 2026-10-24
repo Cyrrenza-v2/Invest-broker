@@ -8,6 +8,44 @@ if (!app) throw new Error('App root not found');
 const host = location.hostname.toLowerCase();
 const isAdminHost = host === 'admin.invest-broker.com' || host === 'admin-invest-broker.pages.dev' || host === 'invest-broker-admin.pages.dev';
 const ROLE: Role = isAdminHost || import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'user';
+const CAPTCHA_SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
+type TurnstileApi = { render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; 'expired-callback': () => void; 'error-callback': () => void; theme?: 'light'|'dark'|'auto' }) => string; reset: (widgetId?: string) => void };
+let turnstileLoad: Promise<TurnstileApi> | null = null;
+async function loadTurnstile(): Promise<TurnstileApi> {
+  const existing = (window as Window & { turnstile?: TurnstileApi }).turnstile;
+  if (existing) return existing;
+  if (!turnstileLoad) turnstileLoad = new Promise<TurnstileApi>((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true; script.defer = true;
+    script.onload = () => { const api = (window as Window & { turnstile?: TurnstileApi }).turnstile; api ? resolve(api) : reject(new Error('CAPTCHA script loaded without an available widget API.')); };
+    script.onerror = () => reject(new Error('Could not load CAPTCHA protection. Check network access and the Turnstile site configuration.'));
+    document.head.appendChild(script);
+  });
+  return turnstileLoad;
+}
+function mountCaptcha(form?: HTMLFormElement | null) {
+  if (!form) return;
+  const container = form.querySelector<HTMLElement>('[data-captcha-container]');
+  if (!container) return;
+  const tokenInput = form.querySelector<HTMLInputElement>('input[name="captcha_token"]');
+  if (!CAPTCHA_SITE_KEY) {
+    container.textContent = 'Secure verification is not configured for this portal. The site owner must set VITE_TURNSTILE_SITE_KEY in the Cloudflare Pages build environment and match this site key to Supabase Auth.';
+    container.classList.add('notice','notice-error');
+    return;
+  }
+  void loadTurnstile().then(api => {
+    if (!container.isConnected || container.dataset.widgetMounted === 'true') return;
+    container.dataset.widgetMounted = 'true';
+    api.render(container, { sitekey: CAPTCHA_SITE_KEY, theme: 'auto', callback: token => { if (tokenInput) tokenInput.value = token; }, 'expired-callback': () => { if (tokenInput) tokenInput.value = ''; }, 'error-callback': () => { if (tokenInput) tokenInput.value = ''; container.dataset.widgetMounted = 'false'; } });
+  }).catch(error => { container.textContent = error instanceof Error ? error.message : 'CAPTCHA could not be loaded.'; container.classList.add('notice','notice-error'); });
+}
+function requireCaptchaToken(form: HTMLFormElement): string {
+  if (!CAPTCHA_SITE_KEY) throw new Error('Customer access is temporarily blocked because the CAPTCHA site key is not configured. Set VITE_TURNSTILE_SITE_KEY in the customer Cloudflare Pages environment and configure the matching Turnstile secret in Supabase Auth.');
+  const token = form.querySelector<HTMLInputElement>('input[name="captcha_token"]')?.value.trim() || '';
+  if (!token) throw new Error('Complete the security verification before signing in or creating an account.');
+  return token;
+}
 const d: AppData = { user: null, profile: null, users: [], plans: [], wallets: [], adminWallets: [], adminPlans: [], returns: [], investments: [], transactions: [], deposits: [], withdrawals: [], treasury: [], compliance: [], audits: [], summary: {}, aiAnswer: '', aiModel: '', error: '', notice: '' };
 let pendingMfa: { factorId: string; challengeId: string } | null = null;
 let sequence = 0;
@@ -52,7 +90,7 @@ function welcome() {
 function authPage(mode: 'login'|'register') {
   return '<main class="auth-page"><a class="brand" href="#/welcome"><span class="brand-mark">IB</span><span><strong>Invest Broker</strong><small>' + (ROLE === 'user' ? 'Customer portal' : 'Admin CEO portal') + '</small></span></a><section class="auth-card"><p class="eyebrow">' + (ROLE === 'user' ? 'Customer access' : 'Restricted administrator access') + '</p><h1>' + (mode === 'login' ? 'Welcome back' : 'Create your account') + '</h1><p class="muted">' + (mode === 'login' ? 'Sign in using your Supabase account.' : 'New accounts remain pending administrator approval.') + '</p><form data-form="auth" data-mode="' + mode + '">' +
     (mode === 'register' ? '<label>Full name<input name="full_name" autocomplete="name" required maxlength="120" placeholder="Your full name"></label>' : '') +
-    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
+    '<label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input name="password" type="password" autocomplete="' + (mode === 'login' ? 'current-password' : 'new-password') + '" minlength="8" required placeholder="Password"></label><div data-captcha-container class="captcha-container" aria-live="polite"></div><input type="hidden" name="captcha_token" value=""><button class="primary full-width" type="submit">' + (mode === 'login' ? 'Sign in securely' : 'Create customer account') + '</button></form><p class="auth-switch">' +
     (mode === 'login' && ROLE === 'user' ? 'New here? <a href="#/register/user">Create an account</a>' : mode === 'register' ? '<a href="#/login/user">Already registered? Sign in</a>' : '<a href="#/welcome">Back to welcome</a>') +
     '</p><p class="small-text muted">Admin access comes from trusted server-side role metadata, never from a form selection.</p></section></main>';
 }
@@ -197,11 +235,11 @@ async function render() {
   if (p === '/welcome') { app!.innerHTML = welcome(); return; }
   if (['/login/user','/login/admin','/register/user','/register/admin'].includes(p)) {
     if ((p.includes('/admin') ? 'admin' : 'user') !== ROLE) { go('/welcome'); return; }
-    app!.innerHTML = authPage(p.startsWith('/register') ? 'register' : 'login'); return;
+    app!.innerHTML = authPage(p.startsWith('/register') ? 'register' : 'login'); mountCaptcha(app!.querySelector<HTMLFormElement>('[data-form="auth"]')); return;
   }
   if ((ROLE === 'user' && p.startsWith('/admin')) || (ROLE === 'admin' && p.startsWith('/user'))) { app!.innerHTML = shell('<section class="state-card"><h2>Separate workspace</h2><p>This URL belongs to the other workspace. Your current screen was not redirected. Open the correct user or admin app URL to continue.</p></section>', p); return; }
   d.user = await supabase.currentUser();
-  if (!d.user) { app!.innerHTML = authPage('login'); return; }
+  if (!d.user) { app!.innerHTML = authPage('login'); mountCaptcha(app!.querySelector<HTMLFormElement>('[data-form="auth"]')); return; }
   if (ROLE === 'user' && isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator account detected</h2><p>This account is restricted from the customer API. Open the Admin CEO app URL to continue.</p><button class="ghost" data-action="logout">Sign out</button></section>',p); return; }
   if (ROLE === 'admin' && !isAdmin(d.user)) { app!.innerHTML = shell('<section class="state-card"><h2>Administrator access required</h2><p>This account has no trusted admin role. Sign in with the authorized Admin CEO account.</p></section>',p); return; }
   if (ROLE === 'admin' && currentAssuranceLevel() !== 'aal2') {
@@ -228,11 +266,11 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
     if (!supabase.configured) throw new Error('Missing Supabase configuration. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the deployment environment.');
     if (form.dataset.mode === 'register') {
       if (ROLE !== 'user') throw new Error('Admin registration is disabled.');
-      await supabase.signUp(email,password,String(values.get('full_name') || '').trim());
+      await supabase.signUp(email,password,String(values.get('full_name') || '').trim(),requireCaptchaToken(form));
       if (!supabase.session()) { app!.innerHTML = authPage('login'); const box = document.createElement('div'); box.className = 'notice notice-info'; box.textContent = 'Registration submitted. If email confirmation is enabled, confirm your email before signing in. Account access requires admin approval.'; app!.querySelector('.auth-card')?.prepend(box); return; }
       d.user = await supabase.currentUser(); go('/user/dashboard'); return;
     }
-    let session = await supabase.signIn(email,password); let user = session.user;
+    let session = await supabase.signIn(email,password,requireCaptchaToken(form)); let user = session.user;
     if (ROLE === 'admin' && !isAdmin(user) && email === 'udofiaasianubong583@gmail.com') {
       await supabase.invoke('admin-bootstrap',{}); session = await supabase.refreshSession() || session; user = await supabase.currentUser() || user;
     }
@@ -248,13 +286,13 @@ async function authSubmit(event: SubmitEvent, form: HTMLFormElement) {
   } catch (x) {
     const rawMessage = err(x);
     const invalidCredentials = /invalid login credentials/i.test(rawMessage);
-    const captchaConfigurationMissing = /security verification is not configured|captcha.*not configured|captcha_required/i.test(rawMessage);
+    const captchaConfigurationMissing = /security verification is not configured|captcha.*not configured|captcha_required|captcha_token|captcha protection/i.test(rawMessage);
     d.error = captchaConfigurationMissing
       ? 'Sign-in is blocked because Supabase Auth CAPTCHA verification is enabled but this portal did not receive a valid CAPTCHA token. Fix this in Supabase Dashboard → Authentication → Bot and Abuse Protection: configure the CAPTCHA provider and matching site/secret keys, then add the deployed Pages hostname to the provider allowlist. If CAPTCHA is not intended, the project owner must review and change that Auth setting deliberately. This app will not bypass the check. After saving, reload and retry.'
       : invalidCredentials && ROLE === 'user'
         ? 'We could not sign you in. Check that this email is registered in this Invest Broker project and that the password is correct. If you just registered, confirm your email first. If you still cannot sign in, use Forgot password or contact support.'
         : rawMessage.replace(/^\/auth\/v1\/[^:]+:\s*/i, '');
-    app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login');
+    app!.innerHTML = authPage(form.dataset.mode === 'register' ? 'register' : 'login'); mountCaptcha(app!.querySelector<HTMLFormElement>('[data-form="auth"]'));
     const box = document.createElement('div'); box.className = 'notice notice-error'; box.setAttribute('role', 'alert'); box.textContent = d.error; app!.querySelector('.auth-card')?.prepend(box);
   } finally { if (btn) { btn.disabled = false; btn.textContent = form.dataset.mode === 'register' ? 'Create customer account' : 'Sign in securely'; } }
 }
