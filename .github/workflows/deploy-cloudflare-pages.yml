@@ -16,7 +16,8 @@ concurrency:
 jobs:
   verify-portals:
     name: Build and smoke-test both portals
-    runs-on: ubuntu-latest
+    # Pin to the current Ubuntu LTS to avoid unplanned ubuntu-latest image migrations.
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out source
         uses: actions/checkout@v4
