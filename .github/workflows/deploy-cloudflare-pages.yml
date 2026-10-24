@@ -15,8 +15,9 @@ concurrency:
 
 jobs:
   verify-portals:
-    name: Build and smoke-test both portals
-    runs-on: ubuntu-latest
+    name: Build, test, audit, and smoke-test both portals
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -27,8 +28,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund --legacy-peer-deps
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund --legacy-peer-deps
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Run Worker tests
+        run: npm run test:worker
 
       - name: Build customer portal
         env:
@@ -37,7 +44,8 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'sb_publishable_WRqEfkebSkqEBYhiCSAXRA_Z_jovR3l' }}
         run: |
           npm run build
-          mv dist dist-user
+          test -s dist/index.html
+          cp -R dist dist-user
 
       - name: Build admin portal
         env:
@@ -46,12 +54,20 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || 'sb_publishable_WRqEfkebSkqEBYhiCSAXRA_Z_jovR3l' }}
         run: |
           npm run build
-          mv dist dist-admin
+          test -s dist/index.html
+          cp -R dist dist-admin
 
-      # Cloudflare Pages' connected Git deployment publishes main automatically.
-      # This workflow verifies the same source without requiring duplicate API secrets.
-      - name: Verify customer portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-user.pages.dev/ -o /dev/null
+      # Pages Git integration deploys main. These checks confirm that the stable
+      # project URLs return HTML; authenticated user journeys require test users
+      # and are not implied by an HTTP 200 response.
+      - name: Smoke-test customer Pages URL
+        run: |
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 3 https://invest-broker-user.pages.dev/ -o customer.html
+          grep -Eiq '<html|<!doctype html' customer.html
+          grep -Eiq '<title|id="app"|id="root"' customer.html
 
-      - name: Verify admin portal is reachable
-        run: curl --fail --silent --show-error --retry 5 --retry-delay 3 https://invest-broker-admin.pages.dev/ -o /dev/null
+      - name: Smoke-test admin Pages URL
+        run: |
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 3 https://invest-broker-admin.pages.dev/ -o admin.html
+          grep -Eiq '<html|<!doctype html' admin.html
+          grep -Eiq '<title|id="app"|id="root"' admin.html
